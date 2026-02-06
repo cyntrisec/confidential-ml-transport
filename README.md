@@ -13,9 +13,12 @@ Attestation-bound encrypted tensor transport for confidential ML inference over 
 - **Full channel encryption** — all post-handshake frames (data, tensor, heartbeat, shutdown, error) are encrypted and authenticated via AEAD
 - **Key material protection** — symmetric keys zeroized on drop, contributory DH check, domain-separated session ID
 - **Pluggable transports** — TCP and VSock backends via feature flags
-- **Pluggable attestation** — trait-based attestation provider/verifier, with mock implementation for testing (Nitro, SEV-SNP, TDX implementable downstream)
+- **Pluggable attestation** — trait-based attestation provider/verifier, with mock and Nitro implementations (SEV-SNP, TDX implementable downstream)
 - **Monotonic sequence enforcement** — replay protection on every decrypted message
 - **Hardened handshake** — configurable timeout, mandatory public key binding, sequence validation, confirmation binds both keys
+- **Measurement verification** — verify PCR/measurement registers against expected values during handshake
+- **Connection retry** — exponential backoff with jitter for resilient connection establishment
+- **Transparent proxy** — encrypt-on-the-wire proxy pair for wrapping existing TCP services without code changes
 
 ## Wire Protocol
 
@@ -104,6 +107,114 @@ let response = client.recv().await?; // Message::Data("hello")
 client.shutdown().await?;
 ```
 
+### SessionConfig builder
+
+Use the builder pattern to customize session configuration:
+
+```rust
+use std::time::Duration;
+use std::collections::BTreeMap;
+use confidential_ml_transport::{
+    SessionConfig, RetryPolicy, ExpectedMeasurements,
+};
+
+let config = SessionConfig::builder()
+    .handshake_timeout(Duration::from_secs(10))
+    .retry_policy(RetryPolicy {
+        max_retries: 5,
+        initial_delay: Duration::from_millis(100),
+        max_delay: Duration::from_secs(10),
+        backoff_multiplier: 2.0,
+    })
+    .expected_measurements(ExpectedMeasurements::new({
+        let mut m = BTreeMap::new();
+        m.insert(0, vec![0xAA; 48]); // expected PCR0
+        m
+    }))
+    .build()?;
+```
+
+### Connection retry with backoff
+
+Use `connect_with_retry` to automatically retry failed connections with exponential backoff:
+
+```rust
+use confidential_ml_transport::{SecureChannel, SessionConfig, RetryPolicy};
+use std::time::Duration;
+
+let config = SessionConfig::builder()
+    .retry_policy(RetryPolicy::default()) // 3 retries, 1s initial, 2x backoff
+    .build()?;
+
+let mut channel = SecureChannel::connect_with_retry(
+    || async { tokio::net::TcpStream::connect("enclave:5000").await },
+    &verifier,
+    config,
+).await?;
+```
+
+### Measurement verification
+
+Verify PCR/measurement registers against expected values during the handshake. If any measurement mismatches, the connection is rejected before any application data flows:
+
+```rust
+use std::collections::BTreeMap;
+use confidential_ml_transport::{SessionConfig, ExpectedMeasurements};
+
+let mut expected = BTreeMap::new();
+expected.insert(0, pcr0_bytes.to_vec());  // PCR0: enclave image hash
+expected.insert(1, pcr1_bytes.to_vec());  // PCR1: kernel hash
+
+let config = SessionConfig::builder()
+    .expected_measurements(ExpectedMeasurements::new(expected))
+    .build()?;
+
+// Handshake will fail if the enclave's measurements don't match
+let mut channel = SecureChannel::connect_with_attestation(
+    stream, &verifier, config,
+).await?;
+```
+
+For testing, use `MockVerifierWithMeasurements` to simulate an enclave returning specific measurement values:
+
+```rust
+use confidential_ml_transport::MockVerifierWithMeasurements;
+
+let verifier = MockVerifierWithMeasurements::new(vec![
+    vec![0xAA; 48],  // measurement[0]
+    vec![0xBB; 48],  // measurement[1]
+]);
+```
+
+### Transparent proxy
+
+Wrap any existing TCP service with encryption, without modifying the service code. The server proxy runs inside the enclave and forwards decrypted traffic to a local backend; the client proxy runs on the host and accepts plaintext TCP connections.
+
+```rust
+use std::sync::Arc;
+use confidential_ml_transport::proxy::server::{run_server_proxy, ServerProxyConfig};
+use confidential_ml_transport::proxy::client::{run_client_proxy, ClientProxyConfig};
+use confidential_ml_transport::{MockProvider, MockVerifier, SessionConfig};
+
+// Inside the enclave: decrypt and forward to local inference server
+let server_config = ServerProxyConfig {
+    listen_addr: "0.0.0.0:5000".parse()?,
+    backend_addr: "127.0.0.1:8080".parse()?,  // local inference server
+    session_config: SessionConfig::default(),
+};
+tokio::spawn(run_server_proxy(server_config, Arc::new(provider)));
+
+// On the host: accept plaintext, encrypt and forward to enclave
+let client_config = ClientProxyConfig {
+    listen_addr: "127.0.0.1:9000".parse()?,
+    enclave_addr: "enclave:5000".parse()?,
+    session_config: SessionConfig::default(),
+};
+tokio::spawn(run_client_proxy(client_config, Arc::new(verifier)));
+
+// Now any TCP client connecting to localhost:9000 gets transparent encryption
+```
+
 ### Sending tensors
 
 ```rust
@@ -136,29 +247,32 @@ use confidential_ml_transport::{
     error::AttestError,
 };
 
-struct NitroProvider { /* NSM API handle */ }
+struct MyProvider { /* platform-specific handle */ }
 
 #[async_trait]
-impl AttestationProvider for NitroProvider {
+impl AttestationProvider for MyProvider {
     async fn attest(
         &self,
         user_data: Option<&[u8]>,
         nonce: Option<&[u8]>,
         public_key: Option<&[u8]>,
     ) -> Result<AttestationDocument, AttestError> {
-        // Call NSM API to generate attestation document
+        // Call platform API to generate attestation document
         todo!()
     }
 }
 ```
+
+A built-in `NitroProvider` and `NitroVerifier` are available behind the `nitro` feature flag for AWS Nitro Enclaves.
 
 ## Features
 
 | Feature | Default | Description |
 |---|---|---|
 | `mock` | Yes | Mock attestation provider/verifier for testing |
-| `tcp` | Yes | TCP transport helpers |
+| `tcp` | Yes | TCP transport helpers and transparent proxy |
 | `vsock` | No | VSock transport via `tokio-vsock` |
+| `nitro` | No | AWS Nitro Enclave attestation (NitroProvider/NitroVerifier) |
 
 ```bash
 # Default (mock + tcp)
@@ -166,6 +280,12 @@ cargo build
 
 # With VSock support
 cargo build --features vsock
+
+# With Nitro attestation (requires libssl-dev)
+cargo build --features nitro
+
+# All features
+cargo build --all-features
 
 # Minimal
 cargo build --no-default-features --features mock,tcp
@@ -177,8 +297,17 @@ cargo build --no-default-features --features mock,tcp
 # All tests (unit + proptest + integration)
 cargo test
 
+# All features including Nitro verifier tests
+cargo test --all-features
+
 # Property-based tests only
 cargo test --test frame_roundtrip
+
+# Retry and measurement tests
+cargo test --test session_retry
+
+# Proxy integration tests
+cargo test --test proxy_integration
 
 # Benchmarks
 cargo bench --bench frame_codec
@@ -229,9 +358,19 @@ The following security measures have been applied based on a comprehensive audit
 ### Handshake Hardening
 - **Handshake timeout** — Configurable via `SessionConfig::handshake_timeout` (default: 30 seconds). Prevents resource exhaustion from stalled or slow handshakes.
 - **Mandatory public key binding** — The responder's attestation document must include a public key that matches the handshake key exchange. Missing public keys are rejected.
+- **Measurement verification** — Optional `ExpectedMeasurements` checked during the handshake, before any application data flows. Mismatched PCR/measurement values abort the connection.
 - **Confirmation hash binds both keys** — The confirmation message includes both the send and receive keys, ensuring both parties derived identical key pairs.
 - **Handshake sequence validation** — Frame sequence numbers are validated during the handshake (initiator hello=0, responder hello=0, confirmation=1).
 - **Sanitized error messages** — Internal error details are logged via `tracing` but not exposed in protocol-level error messages.
+
+### Connection Resilience
+- **Exponential backoff with jitter** — `RetryPolicy` provides configurable retry with exponential delay (default: 3 retries, 1s initial, 2x multiplier, 30s cap) and random jitter in [0.5x, 1.0x] to avoid thundering herd.
+- **Transport factory pattern** — `connect_with_retry` accepts a closure to create fresh transports per attempt, ensuring clean state on each retry.
+
+### Operational Observability
+- **Structured attestation logging** — `tracing::info` events emitted after successful attestation verification (document hash, measurement count) and measurement verification (expected count).
+- **Debug-level measurement dumps** — Full hex-encoded measurement values logged at `tracing::debug` for forensic analysis.
+- **PCR check logging** — Nitro verifier logs PCR check results at debug level.
 
 ### Frame & Tensor Validation
 - **Tensor dimension cap** — `ndims` is capped at 32 in the decoder, preventing allocation amplification from maliciously crafted tensor headers.
@@ -240,6 +379,7 @@ The following security measures have been applied based on a comprehensive audit
 ### Known Limitations
 - **One-way attestation** — The handshake verifies the responder's (server/enclave) attestation but does not verify the initiator's identity. For mutual attestation, perform an application-level challenge-response after session establishment.
 - **No transport binding** — The channel authenticates the data stream but does not bind to a specific transport address (IP, VSock CID). Perform a transport-level identity check separately if required.
+- **Proxy is TCP-only** — The transparent proxy currently supports TCP backends. VSock proxy support can be added by implementing the same pattern with `tokio-vsock` listeners/streams.
 
 ## License
 
