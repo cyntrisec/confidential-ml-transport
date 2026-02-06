@@ -213,7 +213,10 @@ fn measurement_verification_fails_on_mismatch() {
     let result = measurements.verify(&actual);
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
-    assert!(err.contains("mismatch"), "error should contain 'mismatch': {err}");
+    assert!(
+        err.contains("mismatch"),
+        "error should contain 'mismatch': {err}"
+    );
 }
 
 #[test]

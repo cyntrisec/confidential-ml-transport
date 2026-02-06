@@ -62,13 +62,10 @@ async fn handle_server_connection(
     config: SessionConfig,
 ) -> Result<(), Error> {
     // Perform handshake with the client.
-    let mut channel =
-        SecureChannel::accept_with_attestation(stream, provider, config).await?;
+    let mut channel = SecureChannel::accept_with_attestation(stream, provider, config).await?;
 
     // Connect to the local backend.
-    let mut backend = TcpStream::connect(backend_addr)
-        .await
-        .map_err(Error::Io)?;
+    let mut backend = TcpStream::connect(backend_addr).await.map_err(Error::Io)?;
     backend.set_nodelay(true).ok();
 
     let (mut backend_read, mut backend_write) = backend.split();

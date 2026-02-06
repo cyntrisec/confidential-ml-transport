@@ -43,9 +43,7 @@ impl ExpectedMeasurements {
                     }
                 }
                 None => {
-                    return Err(AttestError::MissingField(format!(
-                        "measurement[{idx}]"
-                    )));
+                    return Err(AttestError::MissingField(format!("measurement[{idx}]")));
                 }
             }
         }

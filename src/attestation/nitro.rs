@@ -78,8 +78,7 @@ impl AttestationProvider for NitroProvider {
 }
 
 /// Bundled AWS Nitro Enclaves root CA certificate (PEM).
-const AWS_NITRO_ROOT_CA_PEM: &[u8] =
-    include_bytes!("aws_nitro_root_ca.pem");
+const AWS_NITRO_ROOT_CA_PEM: &[u8] = include_bytes!("aws_nitro_root_ca.pem");
 
 /// Parsed fields from a Nitro attestation document (CBOR payload).
 struct NitroAttestationDoc {
@@ -139,18 +138,15 @@ impl NitroVerifier {
 
 #[async_trait]
 impl AttestationVerifier for NitroVerifier {
-    async fn verify(
-        &self,
-        doc: &AttestationDocument,
-    ) -> Result<VerifiedAttestation, AttestError> {
+    async fn verify(&self, doc: &AttestationDocument) -> Result<VerifiedAttestation, AttestError> {
         // Step 1: Decode COSE_Sign1 (CBOR tag 18).
-        let cose_sign1 = CoseSign1::from_tagged_slice(&doc.raw).map_err(|e| {
-            AttestError::VerificationFailed(format!("invalid COSE_Sign1: {e}"))
-        })?;
+        let cose_sign1 = CoseSign1::from_tagged_slice(&doc.raw)
+            .map_err(|e| AttestError::VerificationFailed(format!("invalid COSE_Sign1: {e}")))?;
 
-        let payload = cose_sign1.payload.as_ref().ok_or_else(|| {
-            AttestError::MissingField("COSE_Sign1 payload".into())
-        })?;
+        let payload = cose_sign1
+            .payload
+            .as_ref()
+            .ok_or_else(|| AttestError::MissingField("COSE_Sign1 payload".into()))?;
 
         // Step 2: Parse inner attestation document from CBOR.
         let att_doc = parse_attestation_doc(payload)?;
@@ -269,10 +265,7 @@ fn parse_attestation_doc(payload: &[u8]) -> Result<NitroAttestationDoc, AttestEr
     })
 }
 
-fn find_field<'a>(
-    map: &'a [(Value, Value)],
-    key: &str,
-) -> Option<&'a Value> {
+fn find_field<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a Value> {
     map.iter()
         .find(|(k, _)| matches!(k, Value::Text(s) if s == key))
         .map(|(_, v)| v)
@@ -324,10 +317,7 @@ fn get_optional_bytes_field(map: &[(Value, Value)], key: &str) -> Option<Vec<u8>
     }
 }
 
-fn get_bytes_array_field(
-    map: &[(Value, Value)],
-    key: &str,
-) -> Result<Vec<Vec<u8>>, AttestError> {
+fn get_bytes_array_field(map: &[(Value, Value)], key: &str) -> Result<Vec<Vec<u8>>, AttestError> {
     match find_field(map, key) {
         Some(Value::Array(arr)) => {
             let mut result = Vec::with_capacity(arr.len());
@@ -351,8 +341,8 @@ fn get_bytes_array_field(
 }
 
 fn get_pcrs_field(map: &[(Value, Value)]) -> Result<BTreeMap<usize, Vec<u8>>, AttestError> {
-    let pcrs_value = find_field(map, "pcrs")
-        .ok_or_else(|| AttestError::MissingField("pcrs".into()))?;
+    let pcrs_value =
+        find_field(map, "pcrs").ok_or_else(|| AttestError::MissingField("pcrs".into()))?;
 
     let pcrs_map = match pcrs_value {
         Value::Map(m) => m,
@@ -403,9 +393,7 @@ fn validate_cert_chain(
     pinned_root: &X509,
 ) -> Result<(), AttestError> {
     if cabundle.is_empty() {
-        return Err(AttestError::VerificationFailed(
-            "cabundle is empty".into(),
-        ));
+        return Err(AttestError::VerificationFailed("cabundle is empty".into()));
     }
 
     // Parse the root cert from the cabundle and verify it matches the pinned root.
@@ -438,14 +426,10 @@ fn validate_cert_chain(
     })?;
     for (i, intermediate_der) in cabundle.iter().enumerate().skip(1) {
         let cert = X509::from_der(intermediate_der).map_err(|e| {
-            AttestError::VerificationFailed(format!(
-                "failed to parse intermediate cert {i}: {e}"
-            ))
+            AttestError::VerificationFailed(format!("failed to parse intermediate cert {i}: {e}"))
         })?;
         chain.push(cert).map_err(|e| {
-            AttestError::VerificationFailed(format!(
-                "failed to push intermediate cert {i}: {e}"
-            ))
+            AttestError::VerificationFailed(format!("failed to push intermediate cert {i}: {e}"))
         })?;
     }
 
@@ -475,10 +459,7 @@ fn validate_cert_chain(
 
 // -- COSE_Sign1 Signature Verification --
 
-fn verify_cose_signature(
-    cose_sign1: &CoseSign1,
-    leaf_der: &[u8],
-) -> Result<(), AttestError> {
+fn verify_cose_signature(cose_sign1: &CoseSign1, leaf_der: &[u8]) -> Result<(), AttestError> {
     // Parse leaf certificate and extract P-384 public key.
     let leaf = X509::from_der(leaf_der).map_err(|e| {
         AttestError::VerificationFailed(format!("failed to parse leaf cert for sig verify: {e}"))
@@ -488,15 +469,15 @@ fn verify_cose_signature(
         AttestError::VerificationFailed(format!("failed to extract public key: {e}"))
     })?;
 
-    let ec_key = pubkey.ec_key().map_err(|e| {
-        AttestError::VerificationFailed(format!("leaf cert key is not EC: {e}"))
-    })?;
+    let ec_key = pubkey
+        .ec_key()
+        .map_err(|e| AttestError::VerificationFailed(format!("leaf cert key is not EC: {e}")))?;
 
     // Verify it's P-384.
     let group = ec_key.group();
-    let nid = group.curve_name().ok_or_else(|| {
-        AttestError::VerificationFailed("EC key has no named curve".into())
-    })?;
+    let nid = group
+        .curve_name()
+        .ok_or_else(|| AttestError::VerificationFailed("EC key has no named curve".into()))?;
     if nid != Nid::SECP384R1 {
         return Err(AttestError::VerificationFailed(format!(
             "expected P-384 key, got curve NID {:?}",
@@ -508,9 +489,8 @@ fn verify_cose_signature(
     let tbs = cose_sign1.tbs_data(b"");
 
     // Hash with SHA-384.
-    let hash = openssl::hash::hash(MessageDigest::sha384(), &tbs).map_err(|e| {
-        AttestError::VerificationFailed(format!("SHA-384 hash failed: {e}"))
-    })?;
+    let hash = openssl::hash::hash(MessageDigest::sha384(), &tbs)
+        .map_err(|e| AttestError::VerificationFailed(format!("SHA-384 hash failed: {e}")))?;
 
     // Extract raw signature (r || s, each 48 bytes for P-384).
     let raw_sig = &cose_sign1.signature;
@@ -528,13 +508,12 @@ fn verify_cose_signature(
         AttestError::VerificationFailed(format!("failed to parse signature s: {e}"))
     })?;
 
-    let ecdsa_sig = EcdsaSig::from_private_components(r, s).map_err(|e| {
-        AttestError::VerificationFailed(format!("failed to build ECDSA sig: {e}"))
-    })?;
+    let ecdsa_sig = EcdsaSig::from_private_components(r, s)
+        .map_err(|e| AttestError::VerificationFailed(format!("failed to build ECDSA sig: {e}")))?;
 
-    let valid = ecdsa_sig.verify(&hash, &ec_key).map_err(|e| {
-        AttestError::VerificationFailed(format!("ECDSA verification error: {e}"))
-    })?;
+    let valid = ecdsa_sig
+        .verify(&hash, &ec_key)
+        .map_err(|e| AttestError::VerificationFailed(format!("ECDSA verification error: {e}")))?;
 
     if !valid {
         return Err(AttestError::VerificationFailed(
@@ -565,10 +544,7 @@ pub fn encode_attestation_doc(
         Value::Text("module_id".into()),
         Value::Text(module_id.into()),
     ));
-    map_entries.push((
-        Value::Text("digest".into()),
-        Value::Text(digest.into()),
-    ));
+    map_entries.push((Value::Text("digest".into()), Value::Text(digest.into())));
     map_entries.push((
         Value::Text("timestamp".into()),
         Value::Integer(timestamp.into()),
@@ -577,12 +553,7 @@ pub fn encode_attestation_doc(
     // PCRs
     let pcr_entries: Vec<(Value, Value)> = pcrs
         .iter()
-        .map(|(k, v)| {
-            (
-                Value::Integer((*k as u64).into()),
-                Value::Bytes(v.clone()),
-            )
-        })
+        .map(|(k, v)| (Value::Integer((*k as u64).into()), Value::Bytes(v.clone())))
         .collect();
     map_entries.push((Value::Text("pcrs".into()), Value::Map(pcr_entries)));
 
@@ -595,36 +566,18 @@ pub fn encode_attestation_doc(
     map_entries.push((Value::Text("cabundle".into()), Value::Array(bundle)));
 
     match public_key {
-        Some(pk) => map_entries.push((
-            Value::Text("public_key".into()),
-            Value::Bytes(pk.to_vec()),
-        )),
-        None => map_entries.push((
-            Value::Text("public_key".into()),
-            Value::Null,
-        )),
+        Some(pk) => map_entries.push((Value::Text("public_key".into()), Value::Bytes(pk.to_vec()))),
+        None => map_entries.push((Value::Text("public_key".into()), Value::Null)),
     }
 
     match user_data {
-        Some(ud) => map_entries.push((
-            Value::Text("user_data".into()),
-            Value::Bytes(ud.to_vec()),
-        )),
-        None => map_entries.push((
-            Value::Text("user_data".into()),
-            Value::Null,
-        )),
+        Some(ud) => map_entries.push((Value::Text("user_data".into()), Value::Bytes(ud.to_vec()))),
+        None => map_entries.push((Value::Text("user_data".into()), Value::Null)),
     }
 
     match nonce {
-        Some(n) => map_entries.push((
-            Value::Text("nonce".into()),
-            Value::Bytes(n.to_vec()),
-        )),
-        None => map_entries.push((
-            Value::Text("nonce".into()),
-            Value::Null,
-        )),
+        Some(n) => map_entries.push((Value::Text("nonce".into()), Value::Bytes(n.to_vec()))),
+        None => map_entries.push((Value::Text("nonce".into()), Value::Null)),
     }
 
     let mut buf = Vec::new();
@@ -668,7 +621,8 @@ pub fn sign_cose_with_key(
         })
         .build();
 
-    cose.to_tagged_vec().expect("COSE_Sign1 serialization failed")
+    cose.to_tagged_vec()
+        .expect("COSE_Sign1 serialization failed")
 }
 
 #[cfg(test)]
@@ -951,7 +905,10 @@ mod tests {
         let result = verifier.verify(&doc).await;
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("PCR0"), "error should mention PCR0: {err_msg}");
+        assert!(
+            err_msg.contains("PCR0"),
+            "error should mention PCR0: {err_msg}"
+        );
     }
 
     #[tokio::test]
@@ -965,23 +922,15 @@ mod tests {
 
         let mut map_entries: Vec<(Value, Value)> = Vec::new();
         // Deliberately omit module_id
-        map_entries.push((
-            Value::Text("digest".into()),
-            Value::Text("SHA384".into()),
-        ));
+        map_entries.push((Value::Text("digest".into()), Value::Text("SHA384".into())));
         map_entries.push((
             Value::Text("timestamp".into()),
             Value::Integer(1700000000000u64.into()),
         ));
-        let pcr_entries: Vec<(Value, Value)> = vec![(
-            Value::Integer(0u64.into()),
-            Value::Bytes(vec![0xAA; 48]),
-        )];
+        let pcr_entries: Vec<(Value, Value)> =
+            vec![(Value::Integer(0u64.into()), Value::Bytes(vec![0xAA; 48]))];
         map_entries.push((Value::Text("pcrs".into()), Value::Map(pcr_entries)));
-        map_entries.push((
-            Value::Text("certificate".into()),
-            Value::Bytes(leaf_der),
-        ));
+        map_entries.push((Value::Text("certificate".into()), Value::Bytes(leaf_der)));
         map_entries.push((
             Value::Text("cabundle".into()),
             Value::Array(vec![Value::Bytes(ca_der)]),
@@ -1011,7 +960,10 @@ mod tests {
     #[test]
     fn nitro_provider_fails_outside_enclave() {
         let result = NitroProvider::new();
-        assert!(result.is_err(), "NitroProvider::new() should fail without /dev/nsm");
+        assert!(
+            result.is_err(),
+            "NitroProvider::new() should fail without /dev/nsm"
+        );
         let err = result.unwrap_err();
         let msg = format!("{err}");
         assert!(

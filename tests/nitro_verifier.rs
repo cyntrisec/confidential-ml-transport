@@ -4,6 +4,12 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use confidential_ml_transport::attestation::nitro::{encode_attestation_doc, sign_cose_with_key};
+use confidential_ml_transport::attestation::types::AttestationDocument;
+use confidential_ml_transport::error::AttestError;
+use confidential_ml_transport::session::channel::{Message, SecureChannel};
+use confidential_ml_transport::session::SessionConfig;
+use confidential_ml_transport::{AttestationProvider, NitroVerifier};
 use openssl::asn1::Asn1Time;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
@@ -11,12 +17,6 @@ use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use openssl::x509::extension::{BasicConstraints, KeyUsage};
 use openssl::x509::{X509Builder, X509NameBuilder, X509};
-use confidential_ml_transport::attestation::nitro::{encode_attestation_doc, sign_cose_with_key};
-use confidential_ml_transport::attestation::types::AttestationDocument;
-use confidential_ml_transport::error::AttestError;
-use confidential_ml_transport::session::channel::{Message, SecureChannel};
-use confidential_ml_transport::session::SessionConfig;
-use confidential_ml_transport::{AttestationProvider, NitroVerifier};
 
 /// Generate a self-signed P-384 CA certificate.
 fn generate_test_ca() -> (EcKey<openssl::pkey::Private>, X509) {
@@ -127,9 +127,10 @@ impl AttestationProvider for SyntheticNitroProvider {
         let leaf_der = self.leaf_cert.to_der().map_err(|e| {
             AttestError::GenerationFailed(format!("failed to encode leaf cert: {e}"))
         })?;
-        let ca_der = self.ca_cert.to_der().map_err(|e| {
-            AttestError::GenerationFailed(format!("failed to encode CA cert: {e}"))
-        })?;
+        let ca_der = self
+            .ca_cert
+            .to_der()
+            .map_err(|e| AttestError::GenerationFailed(format!("failed to encode CA cert: {e}")))?;
 
         let payload = encode_attestation_doc(
             "i-integration-test",
@@ -158,12 +159,7 @@ async fn nitro_verifier_handshake_integration() {
     pcrs.insert(1, vec![0xBB; 48]);
     pcrs.insert(2, vec![0xCC; 48]);
 
-    let provider = SyntheticNitroProvider::new(
-        ca_cert.clone(),
-        leaf_key,
-        leaf_cert,
-        pcrs.clone(),
-    );
+    let provider = SyntheticNitroProvider::new(ca_cert.clone(), leaf_key, leaf_cert, pcrs.clone());
 
     let ca_pem = ca_cert.to_pem().unwrap();
     let verifier = NitroVerifier::with_root_ca(&ca_pem, pcrs).unwrap();

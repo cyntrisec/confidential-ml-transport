@@ -63,9 +63,7 @@ async fn handle_client_connection(
     config: SessionConfig,
 ) -> Result<(), Error> {
     // Connect to the enclave and perform handshake.
-    let enclave_stream = TcpStream::connect(enclave_addr)
-        .await
-        .map_err(Error::Io)?;
+    let enclave_stream = TcpStream::connect(enclave_addr).await.map_err(Error::Io)?;
     enclave_stream.set_nodelay(true).ok();
 
     let mut channel =

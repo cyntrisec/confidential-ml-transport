@@ -101,18 +101,14 @@ impl SessionConfigBuilder {
     /// Build the `SessionConfig`, validating that all values are sensible.
     pub fn build(self) -> Result<SessionConfig, Error> {
         if self.max_payload_size == 0 {
-            return Err(Error::Session(
-                crate::error::SessionError::HandshakeFailed(
-                    "max_payload_size must be > 0".into(),
-                ),
-            ));
+            return Err(Error::Session(crate::error::SessionError::HandshakeFailed(
+                "max_payload_size must be > 0".into(),
+            )));
         }
         if self.handshake_timeout.is_zero() {
-            return Err(Error::Session(
-                crate::error::SessionError::HandshakeFailed(
-                    "handshake_timeout must be > 0".into(),
-                ),
-            ));
+            return Err(Error::Session(crate::error::SessionError::HandshakeFailed(
+                "handshake_timeout must be > 0".into(),
+            )));
         }
         Ok(SessionConfig {
             cipher_suite: self.cipher_suite,

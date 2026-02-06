@@ -40,8 +40,7 @@ impl RetryPolicy {
     /// Applies exponential backoff with random jitter in [0.5x, 1.0x] of the
     /// computed delay, capped at `max_delay`.
     pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
-        let base = self.initial_delay.as_secs_f64()
-            * self.backoff_multiplier.powi(attempt as i32);
+        let base = self.initial_delay.as_secs_f64() * self.backoff_multiplier.powi(attempt as i32);
         let capped = base.min(self.max_delay.as_secs_f64());
         let jitter = rand::thread_rng().gen_range(0.5..=1.0);
         Duration::from_secs_f64(capped * jitter)
@@ -53,10 +52,7 @@ impl RetryPolicy {
 /// Calls `f` up to `policy.max_retries + 1` times. On failure, sleeps with
 /// exponential backoff before the next attempt. Returns the first success or
 /// the last error.
-pub async fn with_retry<F, Fut, T, E>(
-    policy: &RetryPolicy,
-    mut f: F,
-) -> Result<T, E>
+pub async fn with_retry<F, Fut, T, E>(policy: &RetryPolicy, mut f: F) -> Result<T, E>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
