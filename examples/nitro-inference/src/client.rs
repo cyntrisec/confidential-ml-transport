@@ -1,3 +1,6 @@
+#[cfg(feature = "vsock-nitro")]
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use bytes::Bytes;
 use clap::Parser;
@@ -28,8 +31,13 @@ fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> 
 }
 
 #[cfg(feature = "vsock-nitro")]
-fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> {
-    Box::new(confidential_ml_transport::NitroVerifier::default())
+fn create_verifier() -> Result<Box<dyn confidential_ml_transport::AttestationVerifier>> {
+    // Empty map = skip PCR verification (accept any enclave measurement).
+    // For production, populate with expected PCR0/PCR1/PCR2 from EIF build output.
+    let expected_pcrs = BTreeMap::new();
+    Ok(Box::new(confidential_ml_transport::NitroVerifier::new(
+        expected_pcrs,
+    )?))
 }
 
 #[tokio::main]
@@ -39,7 +47,12 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
+
+    #[cfg(feature = "tcp-mock")]
     let verifier = create_verifier();
+    #[cfg(feature = "vsock-nitro")]
+    let verifier = create_verifier()?;
+
     let config = SessionConfig::default();
 
     #[cfg(feature = "tcp-mock")]
