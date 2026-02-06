@@ -10,9 +10,12 @@ Attestation-bound encrypted tensor transport for confidential ML inference over 
 
 - **Binary framing** — 13-byte fixed header, zero-copy tensor sub-headers, 32 MiB max payload
 - **Attestation-bound sessions** — session keys are derived from attestation documents, binding the cryptographic channel to a verified TEE identity
+- **Full channel encryption** — all post-handshake frames (data, tensor, heartbeat, shutdown, error) are encrypted and authenticated via AEAD
+- **Key material protection** — symmetric keys zeroized on drop, contributory DH check, domain-separated session ID
 - **Pluggable transports** — TCP and VSock backends via feature flags
 - **Pluggable attestation** — trait-based attestation provider/verifier, with mock implementation for testing (Nitro, SEV-SNP, TDX implementable downstream)
 - **Monotonic sequence enforcement** — replay protection on every decrypted message
+- **Hardened handshake** — configurable timeout, mandatory public key binding, sequence validation, confirmation binds both keys
 
 ## Wire Protocol
 
@@ -208,6 +211,35 @@ Measured on a standard development machine:
 | Encryption | ChaCha20Poly1305 | Per-message AEAD with AAD = `version \|\| session_id \|\| sequence` |
 | Transcript | SHA256 | Bind session to attestation + public keys + nonces |
 | Replay protection | Monotonic u64 sequence | Reject any sequence <= last accepted |
+
+## Security Hardening
+
+The following security measures have been applied based on a comprehensive audit:
+
+### Key Material Protection
+- **Key zeroization** — `SymmetricKey` uses `Zeroize + ZeroizeOnDrop` to clear key material from memory when no longer needed. `SealingContext` and `OpeningContext` implement `Drop` to zeroize session IDs and sequence counters.
+- **Contributory key check** — `was_contributory()` rejects non-contributory DH results (small-subgroup or identity point attacks).
+- **Domain-separated session ID** — Session ID is derived from the transcript hash via HKDF with label `"cmt-session-id"`, preventing reuse as HKDF salt.
+
+### Channel Security
+- **All post-handshake frames encrypted** — Heartbeat, shutdown, and error frames are encrypted via AEAD, preventing traffic analysis and injection of unauthenticated control messages. Unencrypted frames in an established session are rejected.
+- **Unified sequence counters** — The AEAD sealer's internal sequence counter is used directly as the frame header sequence number, eliminating desynchronization between the wire format and cryptographic state.
+- **Bounded read buffer** — The read buffer enforces a maximum size to prevent memory exhaustion from oversized or malicious frames.
+
+### Handshake Hardening
+- **Handshake timeout** — Configurable via `SessionConfig::handshake_timeout` (default: 30 seconds). Prevents resource exhaustion from stalled or slow handshakes.
+- **Mandatory public key binding** — The responder's attestation document must include a public key that matches the handshake key exchange. Missing public keys are rejected.
+- **Confirmation hash binds both keys** — The confirmation message includes both the send and receive keys, ensuring both parties derived identical key pairs.
+- **Handshake sequence validation** — Frame sequence numbers are validated during the handshake (initiator hello=0, responder hello=0, confirmation=1).
+- **Sanitized error messages** — Internal error details are logged via `tracing` but not exposed in protocol-level error messages.
+
+### Frame & Tensor Validation
+- **Tensor dimension cap** — `ndims` is capped at 32 in the decoder, preventing allocation amplification from maliciously crafted tensor headers.
+- **Flags encapsulation** — The `Flags` inner field is `pub(crate)`, with `from_raw()` / `raw()` accessors for external use.
+
+### Known Limitations
+- **One-way attestation** — The handshake verifies the responder's (server/enclave) attestation but does not verify the initiator's identity. For mutual attestation, perform an application-level challenge-response after session establishment.
+- **No transport binding** — The channel authenticates the data stream but does not bind to a specific transport address (IP, VSock CID). Perform a transport-level identity check separately if required.
 
 ## License
 
