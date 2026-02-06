@@ -165,10 +165,10 @@ async fn handshake_timeout_triggers() {
     let (client_transport, _server_transport) = tokio::io::duplex(16384);
     // Server side is dropped — no one responds to the handshake.
 
-    let config = SessionConfig {
-        handshake_timeout: Duration::from_millis(100),
-        ..Default::default()
-    };
+    let config = SessionConfig::builder()
+        .handshake_timeout(Duration::from_millis(100))
+        .build()
+        .unwrap();
 
     let verifier = MockVerifier::new();
     let result = SecureChannel::connect_with_attestation(client_transport, &verifier, config).await;
@@ -190,10 +190,10 @@ async fn handshake_within_timeout_succeeds() {
     let provider = MockProvider::new();
     let verifier = MockVerifier::new();
 
-    let server_config = SessionConfig {
-        handshake_timeout: Duration::from_secs(10),
-        ..Default::default()
-    };
+    let server_config = SessionConfig::builder()
+        .handshake_timeout(Duration::from_secs(10))
+        .build()
+        .unwrap();
     let client_config = server_config.clone();
 
     let server_handle = tokio::spawn(async move {
@@ -462,10 +462,10 @@ async fn handshake_rejects_wrong_sequence() {
         let result = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
-            SessionConfig {
-                handshake_timeout: Duration::from_millis(500),
-                ..Default::default()
-            },
+            SessionConfig::builder()
+                .handshake_timeout(Duration::from_millis(500))
+                .build()
+                .unwrap(),
         )
         .await;
         // Should fail because of wrong sequence.

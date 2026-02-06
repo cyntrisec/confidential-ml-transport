@@ -3,6 +3,9 @@ pub mod types;
 #[cfg(feature = "mock")]
 pub mod mock;
 
+#[cfg(feature = "nitro")]
+pub mod nitro;
+
 use async_trait::async_trait;
 
 use crate::error::AttestError;

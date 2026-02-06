@@ -119,6 +119,30 @@ impl AttestationVerifier for MockVerifier {
     }
 }
 
+/// Mock verifier that returns configurable measurement values.
+///
+/// Delegates basic parsing to [`MockVerifier`], then overrides the
+/// `measurements` field with the configured values. This enables testing
+/// measurement verification without a real TEE.
+pub struct MockVerifierWithMeasurements {
+    measurements: Vec<Vec<u8>>,
+}
+
+impl MockVerifierWithMeasurements {
+    pub fn new(measurements: Vec<Vec<u8>>) -> Self {
+        Self { measurements }
+    }
+}
+
+#[async_trait]
+impl AttestationVerifier for MockVerifierWithMeasurements {
+    async fn verify(&self, doc: &AttestationDocument) -> Result<VerifiedAttestation, AttestError> {
+        let mut result = MockVerifier.verify(doc).await?;
+        result.measurements = self.measurements.clone();
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

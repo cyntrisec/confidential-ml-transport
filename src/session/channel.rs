@@ -2,6 +2,8 @@ use bytes::{Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::codec::{Decoder, Encoder};
 
+use std::future::Future;
+
 use crate::attestation::{AttestationProvider, AttestationVerifier};
 use crate::crypto::seal::{OpeningContext, SealingContext};
 use crate::error::{Error, SessionError};
@@ -12,6 +14,7 @@ use crate::frame::{
 };
 
 use super::handshake;
+use super::retry;
 use super::SessionConfig;
 
 /// Maximum read buffer size: header + max payload + margin for in-flight data.
@@ -65,7 +68,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     ) -> Result<Self, Error> {
         let result = tokio::time::timeout(
             config.handshake_timeout,
-            handshake::initiate(&mut transport, verifier),
+            handshake::initiate(
+                &mut transport,
+                verifier,
+                config.expected_measurements.as_ref(),
+            ),
         )
         .await
         .map_err(|_| Error::Session(SessionError::Timeout))??;
@@ -81,6 +88,35 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             codec: FrameCodec::new(),
             config,
         })
+    }
+
+    /// Establish a secure channel as the initiator with automatic retry.
+    ///
+    /// Uses the `transport_factory` closure to create a fresh transport for each
+    /// attempt. If `config.retry_policy` is `None`, behaves identically to
+    /// [`connect_with_attestation`](Self::connect_with_attestation).
+    pub async fn connect_with_retry<F, Fut>(
+        transport_factory: F,
+        verifier: &dyn AttestationVerifier,
+        config: SessionConfig,
+    ) -> Result<Self, Error>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<T, std::io::Error>>,
+    {
+        match config.retry_policy.clone() {
+            Some(policy) => {
+                retry::with_retry(&policy, || async {
+                    let transport = transport_factory().await.map_err(Error::Io)?;
+                    Self::connect_with_attestation(transport, verifier, config.clone()).await
+                })
+                .await
+            }
+            None => {
+                let transport = transport_factory().await.map_err(Error::Io)?;
+                Self::connect_with_attestation(transport, verifier, config).await
+            }
+        }
     }
 
     /// Establish a secure channel as the responder (server).

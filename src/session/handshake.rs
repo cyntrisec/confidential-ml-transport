@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::attestation::types::{AttestationDocument, VerifiedAttestation};
+use crate::attestation::types::{AttestationDocument, ExpectedMeasurements, VerifiedAttestation};
 use crate::attestation::{AttestationProvider, AttestationVerifier};
 use crate::crypto::hpke::{self, KeyPair};
 use crate::crypto::transcript;
@@ -215,6 +215,7 @@ fn validate_handshake_frame(
 pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
     transport: &mut T,
     verifier: &dyn AttestationVerifier,
+    expected_measurements: Option<&ExpectedMeasurements>,
 ) -> Result<HandshakeResult, crate::error::Error> {
     let keypair = KeyPair::generate();
     let mut nonce = [0u8; 32];
@@ -238,6 +239,16 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
         SessionError::HandshakeFailed("attestation verification failed".into())
     })?;
 
+    tracing::info!(
+        document_hash = hex::encode(verified.document_hash),
+        measurement_count = verified.measurements.len(),
+        "attestation verification succeeded"
+    );
+    tracing::debug!(
+        measurements = ?verified.measurements.iter().map(hex::encode).collect::<Vec<_>>(),
+        "peer attestation measurements"
+    );
+
     // Verify the attestation binds the responder's public key (mandatory).
     match verified.public_key {
         Some(ref att_pk) => {
@@ -248,6 +259,15 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
         None => {
             return Err(AttestError::MissingField("public_key".into()).into());
         }
+    }
+
+    // Verify measurements if expected values are provided.
+    if let Some(expected) = expected_measurements {
+        expected.verify(&verified.measurements)?;
+        tracing::info!(
+            expected_count = expected.values.len(),
+            "measurement verification passed"
+        );
     }
 
     // Combine nonces.
@@ -311,6 +331,11 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
             tracing::warn!("attestation generation failed: {e}");
             SessionError::HandshakeFailed("attestation generation failed".into())
         })?;
+
+    tracing::debug!(
+        doc_len = att_doc.raw.len(),
+        "attestation document generated"
+    );
 
     // Send responder hello (seq=0).
     let hello = Frame::hello(0, encode_responder_hello(&pk_bytes, &nonce, &att_doc.raw));
