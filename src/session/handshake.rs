@@ -1,0 +1,321 @@
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use rand::Rng;
+use sha2::{Digest, Sha256};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio_util::codec::{Decoder, Encoder};
+
+use crate::attestation::types::{AttestationDocument, VerifiedAttestation};
+use crate::attestation::{AttestationProvider, AttestationVerifier};
+use crate::crypto::hpke::{self, KeyPair};
+use crate::crypto::transcript;
+use crate::crypto::SymmetricKey;
+use crate::error::{AttestError, SessionError};
+use crate::frame::codec::FrameCodec;
+use crate::frame::{Frame, FrameType};
+
+/// Result of a completed handshake.
+pub struct HandshakeResult {
+    /// Key for encrypting outgoing messages.
+    pub send_key: SymmetricKey,
+    /// Key for decrypting incoming messages.
+    pub recv_key: SymmetricKey,
+    /// Session ID derived from the transcript.
+    pub session_id: [u8; 32],
+    /// The verified attestation from the peer (initiator gets server's attestation).
+    pub peer_attestation: Option<VerifiedAttestation>,
+    /// Residual bytes read from the transport but not consumed by the handshake.
+    /// Must be prepended to the channel's read buffer.
+    pub residual: BytesMut,
+}
+
+// -- Wire helpers --
+
+fn encode_initiator_hello(public_key: &[u8; 32], nonce: &[u8; 32]) -> Bytes {
+    let mut buf = BytesMut::with_capacity(1 + 32 + 32);
+    buf.put_u8(1); // message number
+    buf.put_slice(public_key);
+    buf.put_slice(nonce);
+    buf.freeze()
+}
+
+fn encode_responder_hello(
+    public_key: &[u8; 32],
+    nonce: &[u8; 32],
+    attestation_doc: &[u8],
+) -> Bytes {
+    let mut buf = BytesMut::with_capacity(1 + 32 + 32 + 4 + attestation_doc.len());
+    buf.put_u8(2); // message number
+    buf.put_slice(public_key);
+    buf.put_slice(nonce);
+    buf.put_u32(attestation_doc.len() as u32);
+    buf.put_slice(attestation_doc);
+    buf.freeze()
+}
+
+fn encode_confirmation(confirmation_hash: &[u8; 32]) -> Bytes {
+    let mut buf = BytesMut::with_capacity(1 + 32);
+    buf.put_u8(3); // message number
+    buf.put_slice(confirmation_hash);
+    buf.freeze()
+}
+
+fn parse_initiator_hello(payload: &[u8]) -> Result<([u8; 32], [u8; 32]), SessionError> {
+    if payload.len() < 1 + 32 + 32 {
+        return Err(SessionError::HandshakeFailed(
+            "initiator hello too short".into(),
+        ));
+    }
+    if payload[0] != 1 {
+        return Err(SessionError::UnexpectedMessage {
+            expected: "initiator_hello (1)",
+            actual: format!("message type {}", payload[0]),
+        });
+    }
+    let mut pk = [0u8; 32];
+    let mut nonce = [0u8; 32];
+    pk.copy_from_slice(&payload[1..33]);
+    nonce.copy_from_slice(&payload[33..65]);
+    Ok((pk, nonce))
+}
+
+fn parse_responder_hello(
+    payload: &[u8],
+) -> Result<([u8; 32], [u8; 32], AttestationDocument), SessionError> {
+    if payload.len() < 1 + 32 + 32 + 4 {
+        return Err(SessionError::HandshakeFailed(
+            "responder hello too short".into(),
+        ));
+    }
+    if payload[0] != 2 {
+        return Err(SessionError::UnexpectedMessage {
+            expected: "responder_hello (2)",
+            actual: format!("message type {}", payload[0]),
+        });
+    }
+    let mut pk = [0u8; 32];
+    let mut nonce = [0u8; 32];
+    pk.copy_from_slice(&payload[1..33]);
+    nonce.copy_from_slice(&payload[33..65]);
+    let mut cursor = &payload[65..];
+    let doc_len = cursor.get_u32() as usize;
+    if cursor.len() < doc_len {
+        return Err(SessionError::HandshakeFailed(
+            "responder hello: attestation doc truncated".into(),
+        ));
+    }
+    let doc = AttestationDocument::new(cursor[..doc_len].to_vec());
+    Ok((pk, nonce, doc))
+}
+
+fn parse_confirmation(payload: &[u8]) -> Result<[u8; 32], SessionError> {
+    if payload.len() < 1 + 32 {
+        return Err(SessionError::HandshakeFailed(
+            "confirmation too short".into(),
+        ));
+    }
+    if payload[0] != 3 {
+        return Err(SessionError::UnexpectedMessage {
+            expected: "confirmation (3)",
+            actual: format!("message type {}", payload[0]),
+        });
+    }
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&payload[1..33]);
+    Ok(hash)
+}
+
+fn compute_confirmation(session_id: &[u8; 32], send_key: &SymmetricKey) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"cmt-confirmation");
+    hasher.update(session_id);
+    hasher.update(send_key);
+    hasher.finalize().into()
+}
+
+// -- Transport helpers --
+
+async fn send_frame<T: AsyncWrite + Unpin>(
+    transport: &mut T,
+    frame: Frame,
+) -> Result<(), crate::error::Error> {
+    let mut buf = BytesMut::new();
+    FrameCodec::new()
+        .encode(frame, &mut buf)
+        .map_err(crate::error::Error::Frame)?;
+    transport.write_all(&buf).await.map_err(crate::error::Error::Io)?;
+    transport.flush().await.map_err(crate::error::Error::Io)?;
+    Ok(())
+}
+
+async fn recv_frame<T: AsyncRead + Unpin>(
+    transport: &mut T,
+    read_buf: &mut BytesMut,
+) -> Result<Frame, crate::error::Error> {
+    let mut codec = FrameCodec::new();
+    loop {
+        if let Some(frame) = codec.decode(read_buf).map_err(crate::error::Error::Frame)? {
+            return Ok(frame);
+        }
+        let n = transport
+            .read_buf(read_buf)
+            .await
+            .map_err(crate::error::Error::Io)?;
+        if n == 0 {
+            return Err(SessionError::Closed.into());
+        }
+    }
+}
+
+/// Run the initiator (client) side of the handshake.
+pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
+    transport: &mut T,
+    verifier: &dyn AttestationVerifier,
+) -> Result<HandshakeResult, crate::error::Error> {
+    let keypair = KeyPair::generate();
+    let mut nonce = [0u8; 32];
+    rand::thread_rng().fill(&mut nonce);
+    let pk_bytes = keypair.public.to_bytes();
+
+    // Step 1: Send initiator hello.
+    let hello = Frame::hello(0, encode_initiator_hello(&pk_bytes, &nonce));
+    send_frame(transport, hello).await?;
+
+    // Step 2: Receive responder hello.
+    let mut read_buf = BytesMut::with_capacity(4096);
+    let resp_frame = recv_frame(transport, &mut read_buf).await?;
+    if resp_frame.header.msg_type != FrameType::Hello {
+        return Err(SessionError::UnexpectedMessage {
+            expected: "Hello",
+            actual: format!("{:?}", resp_frame.header.msg_type),
+        }
+        .into());
+    }
+
+    let (resp_pk_bytes, resp_nonce, att_doc) = parse_responder_hello(&resp_frame.payload)?;
+
+    // Step 3: Verify attestation.
+    let verified = verifier.verify(&att_doc).await.map_err(|e| {
+        SessionError::HandshakeFailed(format!("attestation verification failed: {e}"))
+    })?;
+
+    // Verify the attestation binds the responder's public key.
+    if let Some(ref att_pk) = verified.public_key {
+        if att_pk.as_slice() != resp_pk_bytes.as_slice() {
+            return Err(AttestError::PublicKeyMismatch.into());
+        }
+    }
+
+    // Combine nonces.
+    let mut combined_nonce = [0u8; 32];
+    for i in 0..32 {
+        combined_nonce[i] = nonce[i] ^ resp_nonce[i];
+    }
+
+    // Compute transcript and derive keys.
+    let resp_pk = x25519_dalek::PublicKey::from(resp_pk_bytes);
+    let transcript_hash = transcript::compute_transcript(
+        &verified.document_hash,
+        &pk_bytes,
+        &resp_pk_bytes,
+        &combined_nonce,
+    );
+
+    let (send_key, recv_key) =
+        hpke::derive_session_keys(&keypair.secret, &resp_pk, &transcript_hash, true)?;
+
+    let session_id = transcript_hash;
+
+    // Step 4: Send confirmation.
+    let confirmation_hash = compute_confirmation(&session_id, &send_key);
+    let confirm_frame = Frame::hello(1, encode_confirmation(&confirmation_hash));
+    send_frame(transport, confirm_frame).await?;
+
+    Ok(HandshakeResult {
+        send_key,
+        recv_key,
+        session_id,
+        peer_attestation: Some(verified),
+        residual: read_buf,
+    })
+}
+
+/// Run the responder (server) side of the handshake.
+pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
+    transport: &mut T,
+    provider: &dyn AttestationProvider,
+) -> Result<HandshakeResult, crate::error::Error> {
+    // Step 1: Receive initiator hello.
+    let mut read_buf = BytesMut::with_capacity(4096);
+    let init_frame = recv_frame(transport, &mut read_buf).await?;
+    if init_frame.header.msg_type != FrameType::Hello {
+        return Err(SessionError::UnexpectedMessage {
+            expected: "Hello",
+            actual: format!("{:?}", init_frame.header.msg_type),
+        }
+        .into());
+    }
+
+    let (init_pk_bytes, init_nonce) = parse_initiator_hello(&init_frame.payload)?;
+
+    // Generate our keypair and nonce.
+    let keypair = KeyPair::generate();
+    let mut nonce = [0u8; 32];
+    rand::thread_rng().fill(&mut nonce);
+    let pk_bytes = keypair.public.to_bytes();
+
+    // Step 2: Generate attestation binding our public key.
+    let att_doc = provider
+        .attest(None, Some(&nonce), Some(&pk_bytes))
+        .await
+        .map_err(|e| SessionError::HandshakeFailed(format!("attestation failed: {e}")))?;
+
+    // Send responder hello.
+    let hello = Frame::hello(0, encode_responder_hello(&pk_bytes, &nonce, &att_doc.raw));
+    send_frame(transport, hello).await?;
+
+    // Derive keys.
+    let att_hash: [u8; 32] = Sha256::digest(&att_doc.raw).into();
+
+    let mut combined_nonce = [0u8; 32];
+    for i in 0..32 {
+        combined_nonce[i] = init_nonce[i] ^ nonce[i];
+    }
+
+    let init_pk = x25519_dalek::PublicKey::from(init_pk_bytes);
+    let transcript_hash =
+        transcript::compute_transcript(&att_hash, &init_pk_bytes, &pk_bytes, &combined_nonce);
+
+    let (send_key, recv_key) =
+        hpke::derive_session_keys(&keypair.secret, &init_pk, &transcript_hash, false)?;
+
+    let session_id = transcript_hash;
+
+    // Step 3: Receive and verify confirmation.
+    let confirm_frame = recv_frame(transport, &mut read_buf).await?;
+    if confirm_frame.header.msg_type != FrameType::Hello {
+        return Err(SessionError::UnexpectedMessage {
+            expected: "Hello (confirmation)",
+            actual: format!("{:?}", confirm_frame.header.msg_type),
+        }
+        .into());
+    }
+
+    let received_hash = parse_confirmation(&confirm_frame.payload)?;
+    // The initiator's send_key == our recv_key.
+    let expected_hash = compute_confirmation(&session_id, &recv_key);
+
+    if received_hash != expected_hash {
+        return Err(SessionError::HandshakeFailed(
+            "confirmation hash mismatch: peer derived different keys".into(),
+        )
+        .into());
+    }
+
+    Ok(HandshakeResult {
+        send_key,
+        recv_key,
+        session_id,
+        peer_attestation: None,
+        residual: read_buf,
+    })
+}

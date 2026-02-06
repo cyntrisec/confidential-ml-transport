@@ -1,0 +1,22 @@
+[package]
+name = "confidential-ml-transport-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "1.5"
+
+[dependencies.confidential-ml-transport]
+path = ".."
+
+[[bin]]
+name = "fuzz_frame_decode"
+path = "fuzz_targets/fuzz_frame_decode.rs"
+doc = false
+
+[workspace]
