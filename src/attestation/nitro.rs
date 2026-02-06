@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use ciborium::value::Value;
-use coset::{CoseSign1, TaggedCborSerializable};
+use coset::{CborSerializable, CoseSign1, TaggedCborSerializable};
 use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
 use openssl::hash::MessageDigest;
@@ -139,8 +139,11 @@ impl NitroVerifier {
 #[async_trait]
 impl AttestationVerifier for NitroVerifier {
     async fn verify(&self, doc: &AttestationDocument) -> Result<VerifiedAttestation, AttestError> {
-        // Step 1: Decode COSE_Sign1 (CBOR tag 18).
+        // Step 1: Decode COSE_Sign1.
+        // Try tagged first (CBOR tag 18), then untagged (raw CBOR array).
+        // Real NSM returns untagged; our test helpers produce tagged.
         let cose_sign1 = CoseSign1::from_tagged_slice(&doc.raw)
+            .or_else(|_| CoseSign1::from_slice(&doc.raw))
             .map_err(|e| AttestError::VerificationFailed(format!("invalid COSE_Sign1: {e}")))?;
 
         let payload = cose_sign1
