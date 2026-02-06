@@ -154,21 +154,19 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         let frame = self.recv_frame().await?;
 
         match frame.header.msg_type {
-            FrameType::Hello => {
-                return Err(SessionError::UnexpectedMessage {
-                    expected: "Data/Tensor/Heartbeat/Shutdown/Error",
-                    actual: "Hello".to_string(),
-                }
-                .into());
+            FrameType::Hello => Err(SessionError::UnexpectedMessage {
+                expected: "Data/Tensor/Heartbeat/Shutdown/Error",
+                actual: "Hello".to_string(),
             }
+            .into()),
             _ => {
                 // All post-handshake frames must be encrypted.
                 if !frame.header.flags.is_encrypted() {
                     return Err(SessionError::UnencryptedFrame.into());
                 }
-                let plaintext =
-                    self.opener
-                        .open(&frame.payload, frame.header.sequence as u64)?;
+                let plaintext = self
+                    .opener
+                    .open(&frame.payload, frame.header.sequence as u64)?;
 
                 match frame.header.msg_type {
                     FrameType::Data => Ok(Message::Data(Bytes::from(plaintext))),
@@ -210,17 +208,19 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
 
     async fn recv_frame(&mut self) -> Result<Frame, Error> {
         loop {
-            if let Some(frame) = self.codec.decode(&mut self.read_buf).map_err(Error::Frame)? {
+            if let Some(frame) = self
+                .codec
+                .decode(&mut self.read_buf)
+                .map_err(Error::Frame)?
+            {
                 return Ok(frame);
             }
             // Enforce read buffer bounds before reading more data.
             if self.read_buf.len() > MAX_READ_BUF_SIZE {
-                return Err(
-                    SessionError::ReadBufferOverflow {
-                        size: self.read_buf.len(),
-                    }
-                    .into(),
-                );
+                return Err(SessionError::ReadBufferOverflow {
+                    size: self.read_buf.len(),
+                }
+                .into());
             }
             let n = self
                 .transport

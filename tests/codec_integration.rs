@@ -38,11 +38,8 @@ async fn multiple_frames_over_duplex() {
 
     loop {
         let n = server.read_buf(&mut read_buf).await.unwrap();
-        loop {
-            match codec.decode(&mut read_buf).unwrap() {
-                Some(frame) => decoded.push(frame),
-                None => break,
-            }
+        while let Some(frame) = codec.decode(&mut read_buf).unwrap() {
+            decoded.push(frame);
         }
         if n == 0 {
             break;

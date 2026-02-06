@@ -4,7 +4,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use confidential_ml_transport::frame::codec::FrameCodec;
 use confidential_ml_transport::frame::tensor::{DType, OwnedTensor, TensorRef};
-use confidential_ml_transport::frame::{Frame, FrameType, Flags, PROTOCOL_VERSION};
+use confidential_ml_transport::frame::{Flags, Frame, FrameType, PROTOCOL_VERSION};
 
 // Strategy for generating arbitrary frame types.
 fn arb_frame_type() -> impl Strategy<Value = FrameType> {

@@ -1,7 +1,7 @@
 use bytes::Bytes;
 
-use confidential_ml_transport::session::channel::{Message, SecureChannel};
 use confidential_ml_transport::frame::tensor::{DType, TensorRef};
+use confidential_ml_transport::session::channel::{Message, SecureChannel};
 use confidential_ml_transport::{MockProvider, MockVerifier, SessionConfig};
 
 /// Full handshake + encrypted data exchange over in-memory duplex.
@@ -218,10 +218,7 @@ async fn session_multiple_messages() {
 
         for i in 0..n_messages {
             let payload = format!("message-{i}");
-            channel
-                .send(Bytes::from(payload))
-                .await
-                .unwrap();
+            channel.send(Bytes::from(payload)).await.unwrap();
         }
 
         channel.shutdown().await.unwrap();

@@ -172,10 +172,7 @@ async fn recv_frame<T: AsyncRead + Unpin>(
 ) -> Result<Frame, crate::error::Error> {
     let mut codec = FrameCodec::new();
     loop {
-        if let Some(frame) = codec
-            .decode(read_buf)
-            .map_err(crate::error::Error::Frame)?
-        {
+        if let Some(frame) = codec.decode(read_buf).map_err(crate::error::Error::Frame)? {
             return Ok(frame);
         }
         let n = transport

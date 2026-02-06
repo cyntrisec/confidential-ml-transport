@@ -3,7 +3,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughpu
 use tokio_util::codec::{Decoder, Encoder};
 
 use confidential_ml_transport::frame::codec::FrameCodec;
-use confidential_ml_transport::frame::tensor::{DType, TensorRef, OwnedTensor};
+use confidential_ml_transport::frame::tensor::{DType, OwnedTensor, TensorRef};
 use confidential_ml_transport::frame::Frame;
 
 fn bench_frame_encode_decode(c: &mut Criterion) {
@@ -95,9 +95,10 @@ fn bench_tensor_encode_decode(c: &mut Criterion) {
 }
 
 fn bench_seal_open(c: &mut Criterion) {
-    use confidential_ml_transport::crypto::seal::{SealingContext, OpeningContext};
+    use confidential_ml_transport::crypto::seal::{OpeningContext, SealingContext};
+    use confidential_ml_transport::crypto::SymmetricKey;
 
-    let key = [0x42u8; 32];
+    let key = SymmetricKey::from([0x42u8; 32]);
     let session_id = [0xAA; 32];
     let plaintext = vec![0xBBu8; 4096];
 

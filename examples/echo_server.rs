@@ -37,10 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             match channel.recv().await.unwrap() {
                 Message::Data(data) => {
-                    println!(
-                        "[client] received: {}",
-                        String::from_utf8_lossy(&data)
-                    );
+                    println!("[client] received: {}", String::from_utf8_lossy(&data));
                 }
                 other => println!("[client] unexpected: {other:?}"),
             }
@@ -57,8 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = MockProvider::new();
     let mut channel =
-        SecureChannel::accept_with_attestation(stream, &provider, SessionConfig::default())
-            .await?;
+        SecureChannel::accept_with_attestation(stream, &provider, SessionConfig::default()).await?;
 
     println!("[server] handshake complete");
 

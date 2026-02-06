@@ -114,11 +114,7 @@ impl OpeningContext {
         }
 
         let nonce = build_nonce(sequence);
-        let aad = build_aad(
-            crate::frame::PROTOCOL_VERSION,
-            &self.session_id,
-            sequence,
-        );
+        let aad = build_aad(crate::frame::PROTOCOL_VERSION, &self.session_id, sequence);
 
         let plaintext = self
             .cipher

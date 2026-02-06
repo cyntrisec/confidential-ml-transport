@@ -87,9 +87,12 @@ impl AttestationVerifier for MockVerifier {
                     "truncated mock document".to_string(),
                 ));
             }
-            let len =
-                u32::from_le_bytes([raw[offset], raw[offset + 1], raw[offset + 2], raw[offset + 3]])
-                    as usize;
+            let len = u32::from_le_bytes([
+                raw[offset],
+                raw[offset + 1],
+                raw[offset + 2],
+                raw[offset + 3],
+            ]) as usize;
             offset += 4;
             if len > 0 {
                 if offset + len > raw.len() {
@@ -126,11 +129,7 @@ mod tests {
         let verifier = MockVerifier::new();
 
         let doc = provider
-            .attest(
-                Some(b"user-data"),
-                Some(b"test-nonce"),
-                Some(&[1u8; 32]),
-            )
+            .attest(Some(b"user-data"), Some(b"test-nonce"), Some(&[1u8; 32]))
             .await
             .unwrap();
 

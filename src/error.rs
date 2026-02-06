@@ -85,7 +85,10 @@ pub enum SessionError {
     HandshakeFailed(String),
 
     #[error("unexpected handshake message type: expected {expected}, got {actual}")]
-    UnexpectedMessage { expected: &'static str, actual: String },
+    UnexpectedMessage {
+        expected: &'static str,
+        actual: String,
+    },
 
     #[error("session not established")]
     NotEstablished,
