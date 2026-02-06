@@ -2,3 +2,5 @@
 /fuzz/target
 /fuzz/corpus
 /fuzz/artifacts
+examples/nitro-inference/model/
+examples/nitro-inference/*.eif

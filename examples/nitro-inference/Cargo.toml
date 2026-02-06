@@ -1,0 +1,34 @@
+[package]
+name = "nitro-inference"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "enclave-server"
+path = "src/server.rs"
+
+[[bin]]
+name = "host-client"
+path = "src/client.rs"
+
+[features]
+default = ["tcp-mock"]
+tcp-mock = ["confidential-ml-transport/mock", "confidential-ml-transport/tcp"]
+vsock-nitro = ["confidential-ml-transport/vsock", "confidential-ml-transport/nitro"]
+
+[dependencies]
+confidential-ml-transport = { path = "../..", default-features = false }
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
+tokenizers = "0.20"
+safetensors = "0.5"
+hf-hub = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.38", features = ["full"] }
+bytes = "1.5"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
