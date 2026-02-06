@@ -115,6 +115,9 @@ pub struct OwnedTensor {
     pub data: Bytes,
 }
 
+/// Maximum number of tensor dimensions (no practical tensor exceeds 32 dims).
+const MAX_NDIMS: u16 = 32;
+
 impl OwnedTensor {
     /// Decode a tensor from a payload buffer.
     pub fn decode(mut buf: Bytes) -> Result<Self, FrameError> {
@@ -123,6 +126,9 @@ impl OwnedTensor {
             return Err(FrameError::IncompleteTensorHeader);
         }
         let ndims = (&buf[..2]).get_u16_le();
+        if ndims > MAX_NDIMS {
+            return Err(FrameError::ShapeOverflow);
+        }
         buf.advance(2);
 
         // dtype (1)

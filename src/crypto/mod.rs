@@ -2,6 +2,8 @@ pub mod hpke;
 pub mod seal;
 pub mod transcript;
 
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 /// Supported cipher suites.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CipherSuite {
@@ -32,8 +34,21 @@ impl CipherSuite {
     }
 }
 
-/// 32-byte symmetric key.
-pub type SymmetricKey = [u8; 32];
+/// 32-byte symmetric key, zeroized on drop.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+pub struct SymmetricKey(pub [u8; 32]);
+
+impl SymmetricKey {
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl From<[u8; 32]> for SymmetricKey {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
 
 /// 32-byte X25519 public key.
 pub type PublicKey = [u8; 32];

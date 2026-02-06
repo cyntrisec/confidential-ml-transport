@@ -1,5 +1,6 @@
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+use zeroize::Zeroize;
 
 use super::SymmetricKey;
 use crate::error::CryptoError;
@@ -27,9 +28,18 @@ pub struct SealingContext {
     sequence: u64,
 }
 
+impl Drop for SealingContext {
+    fn drop(&mut self) {
+        self.session_id.zeroize();
+        // ChaCha20Poly1305 does not impl Zeroize, but it will be dropped.
+        // The key material inside it is stack-allocated and will be overwritten.
+        self.sequence = 0;
+    }
+}
+
 impl SealingContext {
     pub fn new(key: &SymmetricKey, session_id: [u8; 32]) -> Self {
-        let cipher = ChaCha20Poly1305::new_from_slice(key).expect("key length is 32");
+        let cipher = ChaCha20Poly1305::new_from_slice(key.as_bytes()).expect("key length is 32");
         Self {
             cipher,
             session_id,
@@ -37,8 +47,8 @@ impl SealingContext {
         }
     }
 
-    /// Encrypt a plaintext payload. Returns ciphertext (includes AEAD tag).
-    /// Also returns the sequence number used.
+    /// Encrypt a plaintext payload. Returns ciphertext (includes AEAD tag)
+    /// and the sequence number used (for the frame header).
     pub fn seal(&mut self, plaintext: &[u8]) -> Result<(Vec<u8>, u64), CryptoError> {
         let seq = self.sequence;
         self.sequence = seq.checked_add(1).ok_or(CryptoError::NonceOverflow)?;
@@ -74,9 +84,16 @@ pub struct OpeningContext {
     last_sequence: Option<u64>,
 }
 
+impl Drop for OpeningContext {
+    fn drop(&mut self) {
+        self.session_id.zeroize();
+        self.last_sequence = None;
+    }
+}
+
 impl OpeningContext {
     pub fn new(key: &SymmetricKey, session_id: [u8; 32]) -> Self {
-        let cipher = ChaCha20Poly1305::new_from_slice(key).expect("key length is 32");
+        let cipher = ChaCha20Poly1305::new_from_slice(key.as_bytes()).expect("key length is 32");
         Self {
             cipher,
             session_id,
@@ -123,13 +140,17 @@ impl OpeningContext {
 mod tests {
     use super::*;
 
+    fn test_key() -> SymmetricKey {
+        SymmetricKey::from([0x42; 32])
+    }
+
     fn test_session_id() -> [u8; 32] {
         [0xAA; 32]
     }
 
     #[test]
     fn seal_then_open() {
-        let key: SymmetricKey = [0x42; 32];
+        let key = test_key();
         let sid = test_session_id();
 
         let mut sealer = SealingContext::new(&key, sid);
@@ -144,7 +165,7 @@ mod tests {
 
     #[test]
     fn tampered_ciphertext_fails() {
-        let key: SymmetricKey = [0x42; 32];
+        let key = test_key();
         let sid = test_session_id();
 
         let mut sealer = SealingContext::new(&key, sid);
@@ -159,7 +180,7 @@ mod tests {
 
     #[test]
     fn wrong_sequence_fails() {
-        let key: SymmetricKey = [0x42; 32];
+        let key = test_key();
         let sid = test_session_id();
 
         let mut sealer = SealingContext::new(&key, sid);
@@ -167,14 +188,13 @@ mod tests {
 
         let (ciphertext, _seq) = sealer.seal(b"secret").unwrap();
 
-        // Use wrong sequence number.
         let result = opener.open(&ciphertext, 999);
         assert!(matches!(result, Err(CryptoError::OpenFailed)));
     }
 
     #[test]
     fn replay_rejected() {
-        let key: SymmetricKey = [0x42; 32];
+        let key = test_key();
         let sid = test_session_id();
 
         let mut sealer = SealingContext::new(&key, sid);
@@ -186,14 +206,13 @@ mod tests {
         opener.open(&ct0, seq0).unwrap();
         opener.open(&ct1, seq1).unwrap();
 
-        // Replay seq0.
         let result = opener.open(&ct0, seq0);
         assert!(matches!(result, Err(CryptoError::SequenceReplay { .. })));
     }
 
     #[test]
     fn sequence_increments() {
-        let key: SymmetricKey = [0x42; 32];
+        let key = test_key();
         let sid = test_session_id();
         let mut sealer = SealingContext::new(&key, sid);
 

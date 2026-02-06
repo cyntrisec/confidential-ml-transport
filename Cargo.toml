@@ -10,7 +10,7 @@ categories = ["cryptography", "network-programming"]
 
 [dependencies]
 bytes = "1.5"
-tokio = { version = "1.38", features = ["net", "io-util", "sync", "macros", "rt"] }
+tokio = { version = "1.38", features = ["net", "io-util", "sync", "macros", "rt", "time"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 thiserror = "2"
 tracing = "0.1"
@@ -20,6 +20,7 @@ chacha20poly1305 = "0.10"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 rand = "0.8"
 async-trait = "0.1"
+zeroize = { version = "1.8", features = ["derive"] }
 tokio-vsock = { version = "0.7", optional = true }
 
 [features]

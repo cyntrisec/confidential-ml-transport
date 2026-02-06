@@ -20,7 +20,7 @@ fn arb_frame_type() -> impl Strategy<Value = FrameType> {
 
 // Strategy for generating arbitrary flags.
 fn arb_flags() -> impl Strategy<Value = Flags> {
-    (0u8..=0x0F).prop_map(Flags)
+    (0u8..=0x0F).prop_map(Flags::from_raw)
 }
 
 // Strategy for generating arbitrary payloads (limited size for speed).

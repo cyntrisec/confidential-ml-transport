@@ -7,10 +7,15 @@ use crate::crypto::seal::{OpeningContext, SealingContext};
 use crate::error::{Error, SessionError};
 use crate::frame::codec::FrameCodec;
 use crate::frame::tensor::{OwnedTensor, TensorRef};
-use crate::frame::{Frame, FrameType};
+use crate::frame::{
+    Flags, Frame, FrameHeader, FrameType, HEADER_SIZE, MAX_PAYLOAD_SIZE, PROTOCOL_VERSION,
+};
 
 use super::handshake;
 use super::SessionConfig;
+
+/// Maximum read buffer size: header + max payload + margin for in-flight data.
+const MAX_READ_BUF_SIZE: usize = MAX_PAYLOAD_SIZE as usize + HEADER_SIZE + 4096;
 
 /// A high-level message received from a secure channel.
 #[derive(Debug)]
@@ -28,11 +33,20 @@ pub enum Message {
 }
 
 /// Bidirectional encrypted channel over any `AsyncRead + AsyncWrite` transport.
+///
+/// **Security notes:**
+/// - All post-handshake frames are encrypted and authenticated via AEAD.
+/// - The handshake currently supports one-way attestation only: the initiator
+///   verifies the responder's attestation, but the responder does not verify the
+///   initiator. For mutual attestation, perform a second application-level
+///   challenge-response after the session is established.
+/// - This channel authenticates the data stream but does not bind to a specific
+///   transport address (IP, VSock CID). A transport-level identity check should
+///   be performed separately if required.
 pub struct SecureChannel<T> {
     transport: T,
     sealer: SealingContext,
     opener: OpeningContext,
-    send_seq: u32,
     read_buf: BytesMut,
     codec: FrameCodec,
     #[allow(dead_code)]
@@ -43,12 +57,18 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     /// Establish a secure channel as the initiator (client).
     ///
     /// Performs the 3-message handshake, verifying the responder's attestation.
+    /// Subject to the configured `handshake_timeout`.
     pub async fn connect_with_attestation(
         mut transport: T,
         verifier: &dyn AttestationVerifier,
         config: SessionConfig,
     ) -> Result<Self, Error> {
-        let result = handshake::initiate(&mut transport, verifier).await?;
+        let result = tokio::time::timeout(
+            config.handshake_timeout,
+            handshake::initiate(&mut transport, verifier),
+        )
+        .await
+        .map_err(|_| Error::Session(SessionError::Timeout))??;
 
         let sealer = SealingContext::new(&result.send_key, result.session_id);
         let opener = OpeningContext::new(&result.recv_key, result.session_id);
@@ -57,7 +77,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             transport,
             sealer,
             opener,
-            send_seq: 0,
             read_buf: result.residual,
             codec: FrameCodec::new(),
             config,
@@ -67,12 +86,18 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     /// Establish a secure channel as the responder (server).
     ///
     /// Performs the 3-message handshake, providing our attestation.
+    /// Subject to the configured `handshake_timeout`.
     pub async fn accept_with_attestation(
         mut transport: T,
         provider: &dyn AttestationProvider,
         config: SessionConfig,
     ) -> Result<Self, Error> {
-        let result = handshake::respond(&mut transport, provider).await?;
+        let result = tokio::time::timeout(
+            config.handshake_timeout,
+            handshake::respond(&mut transport, provider),
+        )
+        .await
+        .map_err(|_| Error::Session(SessionError::Timeout))??;
 
         let sealer = SealingContext::new(&result.send_key, result.session_id);
         let opener = OpeningContext::new(&result.recv_key, result.session_id);
@@ -81,18 +106,36 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             transport,
             sealer,
             opener,
-            send_seq: 0,
             read_buf: result.residual,
             codec: FrameCodec::new(),
             config,
         })
     }
 
+    /// Encrypt plaintext and construct a frame. The sealer's internal sequence
+    /// counter is used as the frame header sequence, keeping them unified.
+    fn seal_frame(
+        &mut self,
+        msg_type: FrameType,
+        plaintext: &[u8],
+        extra_flags: u8,
+    ) -> Result<Frame, Error> {
+        let (ciphertext, seq) = self.sealer.seal(plaintext)?;
+        Ok(Frame {
+            header: FrameHeader {
+                version: PROTOCOL_VERSION,
+                msg_type,
+                flags: Flags(Flags::ENCRYPTED | extra_flags),
+                sequence: seq as u32,
+                payload_len: ciphertext.len() as u32,
+            },
+            payload: Bytes::from(ciphertext),
+        })
+    }
+
     /// Send an encrypted data payload.
     pub async fn send(&mut self, payload: Bytes) -> Result<(), Error> {
-        let (ciphertext, _seq) = self.sealer.seal(&payload)?;
-        let seq = self.next_seq();
-        let frame = Frame::data(seq, Bytes::from(ciphertext), true);
+        let frame = self.seal_frame(FrameType::Data, &payload, 0)?;
         self.send_frame(frame).await
     }
 
@@ -100,70 +143,61 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     pub async fn send_tensor(&mut self, tensor: TensorRef<'_>) -> Result<(), Error> {
         let mut tensor_buf = BytesMut::new();
         tensor.encode(&mut tensor_buf)?;
-
-        let (ciphertext, _seq) = self.sealer.seal(&tensor_buf)?;
-        let seq = self.next_seq();
-        let frame = Frame::tensor(seq, Bytes::from(ciphertext), true);
+        let frame = self.seal_frame(FrameType::Tensor, &tensor_buf, Flags::TENSOR_PAYLOAD)?;
         self.send_frame(frame).await
     }
 
     /// Receive a message from the channel.
+    ///
+    /// All post-handshake frames must be encrypted. Unencrypted frames are rejected.
     pub async fn recv(&mut self) -> Result<Message, Error> {
         let frame = self.recv_frame().await?;
 
         match frame.header.msg_type {
-            FrameType::Heartbeat => Ok(Message::Heartbeat),
-            FrameType::Shutdown => Ok(Message::Shutdown),
-            FrameType::Error => {
-                let msg = String::from_utf8_lossy(&frame.payload).to_string();
-                Ok(Message::Error(msg))
+            FrameType::Hello => {
+                return Err(SessionError::UnexpectedMessage {
+                    expected: "Data/Tensor/Heartbeat/Shutdown/Error",
+                    actual: "Hello".to_string(),
+                }
+                .into());
             }
-            FrameType::Data => {
-                if frame.header.flags.is_encrypted() {
-                    let plaintext =
-                        self.opener.open(&frame.payload, frame.header.sequence as u64)?;
-                    Ok(Message::Data(Bytes::from(plaintext)))
-                } else {
-                    Ok(Message::Data(frame.payload))
+            _ => {
+                // All post-handshake frames must be encrypted.
+                if !frame.header.flags.is_encrypted() {
+                    return Err(SessionError::UnencryptedFrame.into());
+                }
+                let plaintext =
+                    self.opener
+                        .open(&frame.payload, frame.header.sequence as u64)?;
+
+                match frame.header.msg_type {
+                    FrameType::Data => Ok(Message::Data(Bytes::from(plaintext))),
+                    FrameType::Tensor => {
+                        let tensor = OwnedTensor::decode(Bytes::from(plaintext))?;
+                        Ok(Message::Tensor(tensor))
+                    }
+                    FrameType::Heartbeat => Ok(Message::Heartbeat),
+                    FrameType::Shutdown => Ok(Message::Shutdown),
+                    FrameType::Error => {
+                        let msg = String::from_utf8_lossy(&plaintext).to_string();
+                        Ok(Message::Error(msg))
+                    }
+                    FrameType::Hello => unreachable!(),
                 }
             }
-            FrameType::Tensor => {
-                if frame.header.flags.is_encrypted() {
-                    let plaintext =
-                        self.opener.open(&frame.payload, frame.header.sequence as u64)?;
-                    let tensor = OwnedTensor::decode(Bytes::from(plaintext))?;
-                    Ok(Message::Tensor(tensor))
-                } else {
-                    let tensor = OwnedTensor::decode(frame.payload)?;
-                    Ok(Message::Tensor(tensor))
-                }
-            }
-            FrameType::Hello => Err(SessionError::UnexpectedMessage {
-                expected: "Data/Tensor/Heartbeat/Shutdown/Error",
-                actual: "Hello".to_string(),
-            }
-            .into()),
         }
     }
 
-    /// Send a shutdown frame to the peer.
+    /// Send an encrypted shutdown frame to the peer.
     pub async fn shutdown(&mut self) -> Result<(), Error> {
-        let seq = self.next_seq();
-        let frame = Frame::shutdown(seq);
+        let frame = self.seal_frame(FrameType::Shutdown, &[], 0)?;
         self.send_frame(frame).await
     }
 
-    /// Send a heartbeat frame.
+    /// Send an encrypted heartbeat frame.
     pub async fn heartbeat(&mut self) -> Result<(), Error> {
-        let seq = self.next_seq();
-        let frame = Frame::heartbeat(seq);
+        let frame = self.seal_frame(FrameType::Heartbeat, &[], 0)?;
         self.send_frame(frame).await
-    }
-
-    fn next_seq(&mut self) -> u32 {
-        let seq = self.send_seq;
-        self.send_seq = self.send_seq.wrapping_add(1);
-        seq
     }
 
     async fn send_frame(&mut self, frame: Frame) -> Result<(), Error> {
@@ -178,6 +212,15 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         loop {
             if let Some(frame) = self.codec.decode(&mut self.read_buf).map_err(Error::Frame)? {
                 return Ok(frame);
+            }
+            // Enforce read buffer bounds before reading more data.
+            if self.read_buf.len() > MAX_READ_BUF_SIZE {
+                return Err(
+                    SessionError::ReadBufferOverflow {
+                        size: self.read_buf.len(),
+                    }
+                    .into(),
+                );
             }
             let n = self
                 .transport

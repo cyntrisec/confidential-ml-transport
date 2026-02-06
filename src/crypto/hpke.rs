@@ -25,6 +25,8 @@ impl KeyPair {
 ///
 /// Returns `(send_key, recv_key)`. The key assignment is deterministic based on
 /// the `is_initiator` flag: the initiator's send key is the responder's recv key.
+///
+/// Checks that the shared secret is contributory (not the identity point).
 pub fn derive_session_keys(
     our_secret: &StaticSecret,
     their_public: &PublicKey,
@@ -32,6 +34,11 @@ pub fn derive_session_keys(
     is_initiator: bool,
 ) -> Result<(SymmetricKey, SymmetricKey), CryptoError> {
     let shared_secret = our_secret.diffie_hellman(their_public);
+
+    // Fix #6: Reject non-contributory DH results (small-subgroup / identity point).
+    if !shared_secret.was_contributory() {
+        return Err(CryptoError::NonContributoryKey);
+    }
 
     let hkdf = Hkdf::<Sha256>::new(Some(transcript_hash), shared_secret.as_bytes());
 
@@ -43,11 +50,18 @@ pub fn derive_session_keys(
     hkdf.expand(b"cmt-responder-to-initiator", &mut key_b)
         .map_err(|_| CryptoError::HkdfExpandFailed)?;
 
-    if is_initiator {
-        Ok((key_a, key_b))
+    let (send, recv) = if is_initiator {
+        (SymmetricKey::from(key_a), SymmetricKey::from(key_b))
     } else {
-        Ok((key_b, key_a))
-    }
+        (SymmetricKey::from(key_b), SymmetricKey::from(key_a))
+    };
+
+    // Zeroize the raw arrays now that we've moved them into SymmetricKey.
+    use zeroize::Zeroize;
+    key_a.zeroize();
+    key_b.zeroize();
+
+    Ok((send, recv))
 }
 
 #[cfg(test)]
@@ -66,10 +80,10 @@ mod tests {
             derive_session_keys(&bob.secret, &alice.public, &transcript, false).unwrap();
 
         // Alice's send key == Bob's recv key.
-        assert_eq!(alice_send, bob_recv);
+        assert_eq!(alice_send.0, bob_recv.0);
         // Bob's send key == Alice's recv key.
-        assert_eq!(bob_send, alice_recv);
+        assert_eq!(bob_send.0, alice_recv.0);
         // Send and recv keys are different.
-        assert_ne!(alice_send, alice_recv);
+        assert_ne!(alice_send.0, alice_recv.0);
     }
 }

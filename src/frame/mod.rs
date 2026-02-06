@@ -45,7 +45,7 @@ impl FrameType {
 
 /// Frame flags (bit field).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Flags(pub u8);
+pub struct Flags(pub(crate) u8);
 
 impl Flags {
     pub const ENCRYPTED: u8 = 0x01;
@@ -55,6 +55,16 @@ impl Flags {
 
     pub const fn empty() -> Self {
         Self(0)
+    }
+
+    /// Create flags from raw bits.
+    pub const fn from_raw(bits: u8) -> Self {
+        Self(bits)
+    }
+
+    /// Get the raw flag bits.
+    pub const fn raw(self) -> u8 {
+        self.0
     }
 
     pub const fn is_encrypted(self) -> bool {

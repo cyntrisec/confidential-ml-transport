@@ -54,6 +54,9 @@ pub enum CryptoError {
 
     #[error("invalid key length: expected {expected}, got {actual}")]
     InvalidKeyLength { expected: usize, actual: usize },
+
+    #[error("non-contributory key exchange: peer sent small-subgroup or identity point")]
+    NonContributoryKey,
 }
 
 /// Errors from attestation operations.
@@ -92,6 +95,12 @@ pub enum SessionError {
 
     #[error("handshake timeout")]
     Timeout,
+
+    #[error("received unencrypted frame in established session")]
+    UnencryptedFrame,
+
+    #[error("read buffer overflow: {size} bytes exceeds maximum")]
+    ReadBufferOverflow { size: usize },
 }
 
 /// Top-level error type for the crate.

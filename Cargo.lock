@@ -215,6 +215,7 @@ dependencies = [
  "tokio-vsock",
  "tracing",
  "x25519-dalek",
+ "zeroize",
 ]
 
 [[package]]
