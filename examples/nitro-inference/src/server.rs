@@ -62,15 +62,13 @@ async fn main() -> Result<()> {
             stream.set_nodelay(true)?;
             tracing::info!("accepted connection from {peer}");
 
-            handle_connection(stream, provider.as_ref(), config.clone(), &embedding_model)
-                .await?;
+            handle_connection(stream, provider.as_ref(), config.clone(), &embedding_model).await?;
         }
     }
 
     #[cfg(feature = "vsock-nitro")]
     {
-        let mut listener =
-            confidential_ml_transport::transport::vsock::listen(args.port)?;
+        let mut listener = confidential_ml_transport::transport::vsock::listen(args.port)?;
         tracing::info!("listening on vsock port {} (vsock-nitro)", args.port);
 
         loop {
@@ -78,8 +76,7 @@ async fn main() -> Result<()> {
                 confidential_ml_transport::transport::vsock::accept(&mut listener).await?;
             tracing::info!("accepted vsock connection from {:?}", peer);
 
-            handle_connection(stream, provider.as_ref(), config.clone(), &embedding_model)
-                .await?;
+            handle_connection(stream, provider.as_ref(), config.clone(), &embedding_model).await?;
         }
     }
 }
@@ -93,8 +90,7 @@ async fn handle_connection<T>(
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    let mut channel =
-        SecureChannel::accept_with_attestation(transport, provider, config).await?;
+    let mut channel = SecureChannel::accept_with_attestation(transport, provider, config).await?;
     tracing::info!("handshake complete");
 
     loop {
@@ -105,10 +101,8 @@ where
 
                 match embedding_model.encode(&text) {
                     Ok(embedding) => {
-                        let data_bytes: Vec<u8> = embedding
-                            .iter()
-                            .flat_map(|f| f.to_le_bytes())
-                            .collect();
+                        let data_bytes: Vec<u8> =
+                            embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
 
                         let tensor = TensorRef {
                             name: "embedding",
@@ -122,9 +116,7 @@ where
                     }
                     Err(e) => {
                         tracing::error!("inference failed: {e}");
-                        channel
-                            .send(Bytes::from(format!("ERROR: {e}")))
-                            .await?;
+                        channel.send(Bytes::from(format!("ERROR: {e}"))).await?;
                     }
                 }
             }
