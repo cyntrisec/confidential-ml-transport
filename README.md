@@ -323,15 +323,27 @@ cargo run --example echo_server
 
 ## Benchmarks
 
-Measured on a standard development machine:
+Headline numbers (see [`benchmark_results/BENCHMARK_BRIEF.md`](benchmark_results/BENCHMARK_BRIEF.md) for full cross-environment results, SLO targets, and reproduction commands):
 
-| Operation | Throughput | Latency |
-|---|---|---|
-| Frame encode (4 KB) | ~22 GiB/s | ~170 ns |
-| Frame decode (4 KB) | ~22 GiB/s | ~170 ns |
-| Tensor decode (384 KB) | ~2.2 TiB/s | ~160 ns |
-| ChaCha20Poly1305 seal (4 KB) | ~530 MiB/s | ~7.2 µs |
-| ChaCha20Poly1305 open (4 KB) | ~19 GiB/s | ~180 ns |
+| Metric | Value | Environment |
+|--------|-------|-------------|
+| Handshake (3-msg, mock attestation) | **139–249 µs** p50 | AWS / Azure / local |
+| Steady-state RTT (1536 B embedding) | **29 µs** | Local (established session) |
+| Reconnect amortization | **9.7x** (282 µs → 29 µs) | Local |
+| Throughput (4 KB, secure) | **501–751 MB/s** | Local / AWS |
+| Frame codec roundtrip (4 KB) | **320 ns** (12 GiB/s) | Local |
+| ChaCha20-Poly1305 seal (4 KB) | **6.2 µs** (630 MB/s) | Local |
+
+```bash
+# Run all benchmarks
+bash scripts/bench_transport_performance.sh
+
+# Quick smoke test
+bash scripts/bench_transport_performance.sh --quick
+
+# Individual: handshake, overhead, throughput, reconnect, frame_codec
+cargo bench --bench reconnect
+```
 
 ## Crypto Design
 

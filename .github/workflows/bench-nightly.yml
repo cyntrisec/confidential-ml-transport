@@ -1,0 +1,33 @@
+name: Nightly Benchmark
+
+on:
+  schedule:
+    # Run at 03:00 UTC daily
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench-smoke:
+    name: Benchmark Smoke Test + SLO Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev python3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Cache criterion results across nightly runs for change detection.
+          cache-targets: true
+
+      - name: Run benchmarks (reduced samples)
+        run: |
+          cargo bench --bench handshake -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+          cargo bench --bench confidential_overhead -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+          cargo bench --bench throughput -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+          cargo bench --bench reconnect -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+
+      - name: Check SLO thresholds
+        run: bash scripts/check_bench_slo.sh
