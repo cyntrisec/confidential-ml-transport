@@ -160,15 +160,11 @@ fn compute_confirmation(
 }
 
 /// Derive a session ID from the transcript hash via HKDF (domain-separated from key material).
-fn derive_session_id(
-    transcript_hash: &[u8; 32],
-) -> Result<[u8; 32], crate::error::Error> {
+fn derive_session_id(transcript_hash: &[u8; 32]) -> Result<[u8; 32], crate::error::Error> {
     let hkdf = Hkdf::<Sha256>::new(None, transcript_hash);
     let mut session_id = [0u8; 32];
     hkdf.expand(b"cmt-session-id", &mut session_id)
-        .map_err(|_| {
-            crate::error::Error::Crypto(crate::error::CryptoError::HkdfExpandFailed)
-        })?;
+        .map_err(|_| crate::error::Error::Crypto(crate::error::CryptoError::HkdfExpandFailed))?;
     Ok(session_id)
 }
 

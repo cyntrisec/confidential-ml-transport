@@ -509,12 +509,7 @@ fn validate_cert_chain(
     // This is defense-in-depth — X509StoreContext::verify_cert already validates
     // the chain constraints, but we explicitly reject self-signed leaves to
     // prevent misuse of a CA cert as a signing leaf.
-    if leaf
-        .subject_name()
-        .try_cmp(leaf.issuer_name())
-        .ok()
-        == Some(std::cmp::Ordering::Equal)
-    {
+    if leaf.subject_name().try_cmp(leaf.issuer_name()).ok() == Some(std::cmp::Ordering::Equal) {
         return Err(AttestError::VerificationFailed(
             "leaf certificate is self-signed (subject == issuer)".into(),
         ));
