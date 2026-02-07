@@ -26,10 +26,7 @@ const PAYLOADS: &[(&str, usize)] = &[
 // TLS setup helpers
 // ---------------------------------------------------------------------------
 
-fn make_tls_configs() -> (
-    Arc<rustls::ServerConfig>,
-    Arc<rustls::ClientConfig>,
-) {
+fn make_tls_configs() -> (Arc<rustls::ServerConfig>, Arc<rustls::ClientConfig>) {
     // Generate self-signed cert via rcgen.
     let key_pair = rcgen::KeyPair::generate().unwrap();
     let cert_params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();

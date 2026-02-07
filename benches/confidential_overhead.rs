@@ -11,9 +11,9 @@ use confidential_ml_transport::{MockProvider, MockVerifier, SecureChannel};
 
 /// Payload sizes matching real ML tensor workloads.
 const PAYLOADS: &[(&str, usize)] = &[
-    ("1536b_embedding", 1_536),   // 384-dim F32 (MiniLM-L6-v2 output)
-    ("4k_activation", 4_096),     // Small activation tensor
-    ("384k_hidden", 393_216),     // [128, 768] F32 hidden state
+    ("1536b_embedding", 1_536), // 384-dim F32 (MiniLM-L6-v2 output)
+    ("4k_activation", 4_096),   // Small activation tensor
+    ("384k_hidden", 393_216),   // [128, 768] F32 hidden state
 ];
 
 /// Duplex buffer size — large enough for handshake + largest payload.
@@ -26,18 +26,22 @@ fn bench_plaintext(c: &mut Criterion) {
         let payload = Bytes::from(vec![0xABu8; size]);
         group.throughput(Throughput::Bytes(size as u64));
 
-        group.bench_with_input(BenchmarkId::new("send_recv", label), &payload, |b, payload| {
-            let mut codec = FrameCodec::new();
+        group.bench_with_input(
+            BenchmarkId::new("send_recv", label),
+            &payload,
+            |b, payload| {
+                let mut codec = FrameCodec::new();
 
-            // Pure encode + decode — no I/O, no crypto.
-            b.iter(|| {
-                let frame = Frame::data(0, payload.clone(), false);
-                let mut buf = BytesMut::with_capacity(size + 13);
-                codec.encode(frame, &mut buf).unwrap();
-                let decoded = codec.decode(&mut buf).unwrap().unwrap();
-                black_box(decoded);
-            });
-        });
+                // Pure encode + decode — no I/O, no crypto.
+                b.iter(|| {
+                    let frame = Frame::data(0, payload.clone(), false);
+                    let mut buf = BytesMut::with_capacity(size + 13);
+                    codec.encode(frame, &mut buf).unwrap();
+                    let decoded = codec.decode(&mut buf).unwrap().unwrap();
+                    black_box(decoded);
+                });
+            },
+        );
     }
 
     group.finish();
@@ -179,8 +183,7 @@ fn bench_secure_channel(c: &mut Criterion) {
                     (client_ch.unwrap(), rx)
                 });
 
-                let client_ch =
-                    std::sync::Arc::new(tokio::sync::Mutex::new(client_ch));
+                let client_ch = std::sync::Arc::new(tokio::sync::Mutex::new(client_ch));
 
                 b.iter(|| {
                     let ch = client_ch.clone();

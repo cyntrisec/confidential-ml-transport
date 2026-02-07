@@ -9,7 +9,9 @@ use bytes::{BufMut, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
 use confidential_ml_transport::frame::codec::FrameCodec;
-use confidential_ml_transport::frame::{Frame, FrameType, Flags, FrameHeader, MAX_PAYLOAD_SIZE, PROTOCOL_VERSION};
+use confidential_ml_transport::frame::{
+    Flags, Frame, FrameHeader, FrameType, MAX_PAYLOAD_SIZE, PROTOCOL_VERSION,
+};
 
 // ---------------------------------------------------------------------------
 // Fix 1: Codec reserve() caps at 64 KB per decode call
