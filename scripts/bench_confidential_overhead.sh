@@ -58,6 +58,24 @@ print(data['median']['point_estimate'])
 LABELS=("1536b_embedding" "4k_activation" "384k_hidden")
 SIZES=(1536 4096 393216)
 
+# Validate that all required criterion estimates exist before generating report.
+missing=0
+for group in "confidential_overhead/plaintext" "confidential_overhead/plaintext_duplex" "confidential_overhead/secure_channel"; do
+    for label in "${LABELS[@]}"; do
+        dir_name="${group//\//_}"
+        est="$CRITERION_DIR/$dir_name/send_recv/$label/new/estimates.json"
+        if [[ ! -f "$est" ]]; then
+            echo "ERROR: missing criterion output: $est" >&2
+            missing=$((missing + 1))
+        fi
+    done
+done
+if [[ $missing -gt 0 ]]; then
+    echo "ERROR: $missing criterion estimate file(s) missing. Benchmark may not have run correctly." >&2
+    echo "       Check that 'cargo bench --bench confidential_overhead' completed without errors." >&2
+    exit 1
+fi
+
 # Collect results into JSON
 json_entries=()
 
@@ -88,7 +106,7 @@ json_array=$(printf '%s\n' "${json_entries[@]}" | paste -sd ',' -)
 cat > "$RESULTS_DIR/confidential_overhead.json" << JSONEOF
 {
   "benchmark": "confidential_overhead",
-  "description": "SecureChannel (AEAD + handshake) vs plaintext transport overhead",
+  "description": "Steady-state SecureChannel AEAD overhead vs plaintext transport (handshake excluded)",
   "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "results": [$json_array]
 }
@@ -100,7 +118,8 @@ echo "Wrote $RESULTS_DIR/confidential_overhead.json"
 {
     echo "# Confidential Overhead Benchmark"
     echo ""
-    echo "Measures the overhead of SecureChannel (AEAD encryption) vs plaintext framing."
+    echo "Measures the steady-state overhead of SecureChannel (AEAD encryption) vs plaintext framing."
+    echo "Handshake cost is excluded — measured per send/recv round-trip on an established channel."
     echo ""
     echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo ""
