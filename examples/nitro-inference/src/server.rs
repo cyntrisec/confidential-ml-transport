@@ -96,6 +96,12 @@ where
     loop {
         match channel.recv().await {
             Ok(Message::Data(data)) => {
+                // Echo mode for transport benchmarks: no inference overhead.
+                if data.starts_with(b"ECHO:") {
+                    channel.send(Bytes::copy_from_slice(&data[5..])).await?;
+                    continue;
+                }
+
                 let text = String::from_utf8_lossy(&data);
                 tracing::info!("inference request: \"{}\"", text);
 

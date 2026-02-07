@@ -11,10 +11,14 @@ path = "src/server.rs"
 name = "host-client"
 path = "src/client.rs"
 
+[[bin]]
+name = "bench-client"
+path = "src/bench_client.rs"
+
 [features]
 default = ["tcp-mock"]
 tcp-mock = ["confidential-ml-transport/mock", "confidential-ml-transport/tcp"]
-vsock-nitro = ["confidential-ml-transport/vsock", "confidential-ml-transport/nitro"]
+vsock-nitro = ["confidential-ml-transport/vsock", "confidential-ml-transport/nitro", "dep:tokio-vsock"]
 
 [dependencies]
 confidential-ml-transport = { path = "../..", default-features = false }
@@ -32,3 +36,4 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
+tokio-vsock = { version = "0.7", optional = true }
