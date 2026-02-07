@@ -4,11 +4,15 @@ use std::sync::Arc;
 use bytes::Bytes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 
 use crate::attestation::AttestationProvider;
 use crate::error::Error;
 use crate::session::channel::{Message, SecureChannel};
 use crate::session::SessionConfig;
+
+/// Default maximum number of concurrent connections.
+const DEFAULT_MAX_CONNECTIONS: usize = 256;
 
 /// Configuration for the server-side (enclave) transparent proxy.
 #[derive(Debug, Clone)]
@@ -19,12 +23,16 @@ pub struct ServerProxyConfig {
     pub backend_addr: SocketAddr,
     /// Session configuration for the secure channel.
     pub session_config: SessionConfig,
+    /// Maximum number of concurrent connections (default: 256).
+    /// Excess connections are held at accept until a slot opens.
+    pub max_connections: usize,
 }
 
 /// Run the server-side transparent proxy (inside the enclave).
 ///
 /// Accepts encrypted SecureChannel connections, performs the handshake,
 /// then relays decrypted traffic bidirectionally to a local backend TCP service.
+/// Limits concurrency to `max_connections`.
 pub async fn run_server_proxy(
     config: ServerProxyConfig,
     provider: Arc<dyn AttestationProvider>,
@@ -33,9 +41,21 @@ pub async fn run_server_proxy(
         .await
         .map_err(Error::Io)?;
 
-    tracing::info!(addr = %config.listen_addr, "server proxy listening");
+    let max_conns = if config.max_connections == 0 {
+        DEFAULT_MAX_CONNECTIONS
+    } else {
+        config.max_connections
+    };
+    let semaphore = Arc::new(Semaphore::new(max_conns));
+
+    tracing::info!(addr = %config.listen_addr, max_connections = max_conns, "server proxy listening");
 
     loop {
+        let permit = Arc::clone(&semaphore)
+            .acquire_owned()
+            .await
+            .map_err(|_| Error::Io(std::io::Error::other("semaphore closed")))?;
+
         let (stream, peer_addr) = listener.accept().await.map_err(Error::Io)?;
         stream.set_nodelay(true).ok();
 
@@ -51,6 +71,7 @@ pub async fn run_server_proxy(
             {
                 tracing::warn!(%peer_addr, error = %e, "connection handler error");
             }
+            drop(permit);
         });
     }
 }

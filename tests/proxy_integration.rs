@@ -53,6 +53,7 @@ async fn proxy_end_to_end_echo() {
         listen_addr: server_addr,
         backend_addr: echo_addr,
         session_config: SessionConfig::default(),
+        max_connections: 0,
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
         Arc::new(MockProvider::new());
@@ -70,6 +71,7 @@ async fn proxy_end_to_end_echo() {
         listen_addr: client_proxy_addr,
         enclave_addr: server_addr,
         session_config: SessionConfig::default(),
+        max_connections: 0,
     };
     let verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
         Arc::new(MockVerifier::new());
@@ -113,6 +115,7 @@ async fn proxy_client_disconnect_is_clean() {
         listen_addr: server_addr,
         backend_addr: echo_addr,
         session_config: SessionConfig::default(),
+        max_connections: 0,
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
         Arc::new(MockProvider::new());
@@ -128,6 +131,7 @@ async fn proxy_client_disconnect_is_clean() {
         listen_addr: client_proxy_addr,
         enclave_addr: server_addr,
         session_config: SessionConfig::default(),
+        max_connections: 0,
     };
     let verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
         Arc::new(MockVerifier::new());

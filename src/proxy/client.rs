@@ -4,11 +4,15 @@ use std::sync::Arc;
 use bytes::Bytes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 
 use crate::attestation::AttestationVerifier;
 use crate::error::Error;
 use crate::session::channel::{Message, SecureChannel};
 use crate::session::SessionConfig;
+
+/// Default maximum number of concurrent connections.
+const DEFAULT_MAX_CONNECTIONS: usize = 256;
 
 /// Configuration for the client-side (host) transparent proxy.
 #[derive(Debug, Clone)]
@@ -19,13 +23,16 @@ pub struct ClientProxyConfig {
     pub enclave_addr: SocketAddr,
     /// Session configuration for the secure channel.
     pub session_config: SessionConfig,
+    /// Maximum number of concurrent connections (default: 256).
+    /// Excess connections are held at accept until a slot opens.
+    pub max_connections: usize,
 }
 
 /// Run the client-side transparent proxy (on the host).
 ///
 /// Accepts plaintext TCP connections from local applications, establishes
 /// an encrypted SecureChannel to the enclave, then relays traffic
-/// bidirectionally.
+/// bidirectionally. Limits concurrency to `max_connections`.
 pub async fn run_client_proxy(
     config: ClientProxyConfig,
     verifier: Arc<dyn AttestationVerifier>,
@@ -34,9 +41,21 @@ pub async fn run_client_proxy(
         .await
         .map_err(Error::Io)?;
 
-    tracing::info!(addr = %config.listen_addr, "client proxy listening");
+    let max_conns = if config.max_connections == 0 {
+        DEFAULT_MAX_CONNECTIONS
+    } else {
+        config.max_connections
+    };
+    let semaphore = Arc::new(Semaphore::new(max_conns));
+
+    tracing::info!(addr = %config.listen_addr, max_connections = max_conns, "client proxy listening");
 
     loop {
+        let permit = Arc::clone(&semaphore)
+            .acquire_owned()
+            .await
+            .map_err(|_| Error::Io(std::io::Error::other("semaphore closed")))?;
+
         let (stream, peer_addr) = listener.accept().await.map_err(Error::Io)?;
         stream.set_nodelay(true).ok();
 
@@ -52,6 +71,7 @@ pub async fn run_client_proxy(
             {
                 tracing::warn!(%peer_addr, error = %e, "connection handler error");
             }
+            drop(permit);
         });
     }
 }

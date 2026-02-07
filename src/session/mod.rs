@@ -5,18 +5,17 @@ pub mod retry;
 use std::time::Duration;
 
 use crate::attestation::types::ExpectedMeasurements;
-use crate::crypto::CipherSuite;
 use crate::error::Error;
 
 use self::retry::RetryPolicy;
 
 /// Configuration for a secure session.
+///
+/// The cipher suite is always X25519 + HKDF-SHA256 + ChaCha20-Poly1305.
+/// Multi-suite negotiation may be added in a future version.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
-    /// The cipher suite to use.
-    pub cipher_suite: CipherSuite,
-
     /// Maximum payload size in bytes (default: 32 MiB).
     pub max_payload_size: u32,
 
@@ -33,7 +32,6 @@ pub struct SessionConfig {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            cipher_suite: CipherSuite::X25519ChaChaPoly,
             max_payload_size: crate::frame::MAX_PAYLOAD_SIZE,
             handshake_timeout: Duration::from_secs(30),
             retry_policy: None,
@@ -52,7 +50,6 @@ impl SessionConfig {
 /// Builder for [`SessionConfig`].
 #[derive(Debug, Clone)]
 pub struct SessionConfigBuilder {
-    cipher_suite: CipherSuite,
     max_payload_size: u32,
     handshake_timeout: Duration,
     retry_policy: Option<RetryPolicy>,
@@ -63,7 +60,6 @@ impl Default for SessionConfigBuilder {
     fn default() -> Self {
         let defaults = SessionConfig::default();
         Self {
-            cipher_suite: defaults.cipher_suite,
             max_payload_size: defaults.max_payload_size,
             handshake_timeout: defaults.handshake_timeout,
             retry_policy: None,
@@ -73,11 +69,6 @@ impl Default for SessionConfigBuilder {
 }
 
 impl SessionConfigBuilder {
-    pub fn cipher_suite(mut self, cipher_suite: CipherSuite) -> Self {
-        self.cipher_suite = cipher_suite;
-        self
-    }
-
     pub fn max_payload_size(mut self, size: u32) -> Self {
         self.max_payload_size = size;
         self
@@ -111,7 +102,6 @@ impl SessionConfigBuilder {
             )));
         }
         Ok(SessionConfig {
-            cipher_suite: self.cipher_suite,
             max_payload_size: self.max_payload_size,
             handshake_timeout: self.handshake_timeout,
             retry_policy: self.retry_policy,

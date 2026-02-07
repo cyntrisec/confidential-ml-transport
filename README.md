@@ -201,6 +201,7 @@ let server_config = ServerProxyConfig {
     listen_addr: "0.0.0.0:5000".parse()?,
     backend_addr: "127.0.0.1:8080".parse()?,  // local inference server
     session_config: SessionConfig::default(),
+    max_connections: 256,
 };
 tokio::spawn(run_server_proxy(server_config, Arc::new(provider)));
 
@@ -209,6 +210,7 @@ let client_config = ClientProxyConfig {
     listen_addr: "127.0.0.1:9000".parse()?,
     enclave_addr: "enclave:5000".parse()?,
     session_config: SessionConfig::default(),
+    max_connections: 256,
 };
 tokio::spawn(run_client_proxy(client_config, Arc::new(verifier)));
 

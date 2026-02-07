@@ -166,6 +166,15 @@ async fn send_frame<T: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Maximum read buffer size during handshake.
+///
+/// Handshake messages are small (initiator hello ~65B, responder hello ~65B + attestation doc,
+/// confirmation ~33B). The attestation doc is the largest variable component (typically <16 KB
+/// for Nitro/SEV-SNP). We cap at `MAX_PAYLOAD_SIZE + HEADER_SIZE + margin` to match the channel's
+/// strategy, but in practice handshake reads should never approach this limit.
+const HANDSHAKE_MAX_READ_BUF: usize =
+    crate::frame::MAX_PAYLOAD_SIZE as usize + crate::frame::HEADER_SIZE + 4096;
+
 async fn recv_frame<T: AsyncRead + Unpin>(
     transport: &mut T,
     read_buf: &mut BytesMut,
@@ -174,6 +183,12 @@ async fn recv_frame<T: AsyncRead + Unpin>(
     loop {
         if let Some(frame) = codec.decode(read_buf).map_err(crate::error::Error::Frame)? {
             return Ok(frame);
+        }
+        if read_buf.len() > HANDSHAKE_MAX_READ_BUF {
+            return Err(SessionError::ReadBufferOverflow {
+                size: read_buf.len(),
+            }
+            .into());
         }
         let n = transport
             .read_buf(read_buf)
