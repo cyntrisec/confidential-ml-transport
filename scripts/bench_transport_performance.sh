@@ -376,14 +376,29 @@ p("")
 emb = next((r for r in overhead_results if r["label"] == "1536b_embedding"), None)
 hs_us = hs["p50_ns"] / 1000 if hs["p50_ns"] else 0
 emb_us = emb["p50_ns"] / 1000 if emb and emb["p50_ns"] else 0
-# MiniLM-L6-v2 inference is ~90-116ms (measured with tcp-mock on release build)
-inference_ms = 100  # representative
+# Try to load measured inference time from Nitro production benchmark JSON
+_nitro_json = os.path.join(results_dir, "nitro_enclave", "production_bench_results.json")
+inference_ms = None
+inference_source = "estimated"
+if os.path.exists(_nitro_json):
+    try:
+        with open(_nitro_json) as _f:
+            _nitro = _json.load(_f)
+        inference_ms = _nitro.get("phases", {}).get("inference_rtt", {}).get("p50_ms")
+        if inference_ms:
+            inference_source = "measured"
+    except Exception:
+        pass
+if not inference_ms:
+    inference_ms = 100  # fallback: MiniLM-L6-v2 ~90-116ms on release build
+    inference_source = "estimated"
 total_overhead_ms = (hs_us / 1000) + (emb_us / 1000)  # handshake + one RTT
 overhead_of_inference = total_overhead_ms / inference_ms * 100
 
+_inf_label = f"{inference_ms:.1f}" if inference_source == "measured" else f"~{inference_ms}"
 p(f"| Component | Latency | % of inference |")
 p(f"|-----------|---------|----------------|")
-p(f"| MiniLM-L6-v2 inference (representative) | ~{inference_ms} ms | 100% |")
+p(f"| MiniLM-L6-v2 inference ({inference_source}) | {_inf_label} ms | 100% |")
 p(f"| Handshake (amortized over session) | {fmt_ns(hs['p50_ns'])} | {hs_us/1000/inference_ms*100:.2f}% |")
 if emb:
     p(f"| AEAD send+recv 384-dim embedding (1536 B) | {fmt_ns(emb['p50_ns'])} | {emb_us/1000/inference_ms*100:.2f}% |")
