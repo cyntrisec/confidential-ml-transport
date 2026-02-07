@@ -42,6 +42,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
 
+  bench-constants:
+    name: Bench Constants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check_bench_constants.sh
+
   doc:
     name: Documentation
     runs-on: ubuntu-latest
