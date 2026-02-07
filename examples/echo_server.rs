@@ -6,7 +6,7 @@ use confidential_ml_transport::{MockProvider, MockVerifier, SessionConfig};
 
 /// Encrypted echo server over TCP with mock attestation.
 ///
-/// Run with: `cargo run --example echo_server`
+/// Run with: `cargo run --example echo_server --features mock`
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = "127.0.0.1:9876".parse()?;

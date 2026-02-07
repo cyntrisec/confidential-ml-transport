@@ -24,8 +24,8 @@ ENCLAVE_ID=$(nitro-cli run-enclave \
 
 echo "Enclave ID: $ENCLAVE_ID"
 
-# 2. Get CID
-CID=$(nitro-cli describe-enclaves | jq -r '.[0].EnclaveCID')
+# 2. Get CID for the specific enclave we just launched
+CID=$(nitro-cli describe-enclaves | jq -r --arg eid "$ENCLAVE_ID" '.[] | select(.EnclaveID == $eid) | .EnclaveCID')
 echo "Enclave CID: $CID"
 
 # 3. Wait for enclave to boot

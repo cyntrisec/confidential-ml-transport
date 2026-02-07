@@ -7,7 +7,7 @@ ROOT_DIR="$(dirname "$(dirname "$EXAMPLE_DIR")")"
 
 # 1. Download model from HuggingFace (if not already present)
 MODEL_DIR="$EXAMPLE_DIR/model"
-if [ ! -f "$MODEL_DIR/model.safetensors" ]; then
+if [ ! -f "$MODEL_DIR/model.safetensors" ] || [ ! -f "$MODEL_DIR/tokenizer.json" ] || [ ! -f "$MODEL_DIR/config.json" ]; then
     echo "Downloading MiniLM-L6-v2..."
     mkdir -p "$MODEL_DIR"
     for f in model.safetensors tokenizer.json config.json; do

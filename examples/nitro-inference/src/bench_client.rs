@@ -45,7 +45,23 @@ fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> 
 
 #[cfg(feature = "vsock-nitro")]
 fn create_verifier() -> Result<Box<dyn confidential_ml_transport::AttestationVerifier>> {
-    let expected_pcrs = BTreeMap::new();
+    let mut expected_pcrs = BTreeMap::new();
+    for (env_key, pcr_idx) in [
+        ("EXPECTED_PCR0", 0u8),
+        ("EXPECTED_PCR1", 1),
+        ("EXPECTED_PCR2", 2),
+    ] {
+        if let Ok(hex_val) = std::env::var(env_key) {
+            if !hex_val.is_empty() {
+                let bytes = hex::decode(&hex_val)
+                    .map_err(|e| anyhow::anyhow!("{env_key} is not valid hex: {e}"))?;
+                expected_pcrs.insert(pcr_idx, bytes);
+            }
+        }
+    }
+    if expected_pcrs.is_empty() {
+        eprintln!("WARNING: No EXPECTED_PCR0/1/2 set — accepting ANY enclave measurement.");
+    }
     Ok(Box::new(confidential_ml_transport::NitroVerifier::new(
         expected_pcrs,
     )?))
@@ -128,6 +144,10 @@ async fn connect(cid: u32, port: u32) -> Result<tokio_vsock::VsockStream> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    anyhow::ensure!(args.handshake_rounds > 0, "--handshake-rounds must be > 0");
+    anyhow::ensure!(args.rtt_rounds > 0, "--rtt-rounds must be > 0");
+    anyhow::ensure!(args.inference_rounds > 0, "--inference-rounds must be > 0");
 
     #[cfg(feature = "tcp-mock")]
     let verifier = create_verifier();

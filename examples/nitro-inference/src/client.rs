@@ -32,9 +32,30 @@ fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> 
 
 #[cfg(feature = "vsock-nitro")]
 fn create_verifier() -> Result<Box<dyn confidential_ml_transport::AttestationVerifier>> {
-    // Empty map = skip PCR verification (accept any enclave measurement).
-    // For production, populate with expected PCR0/PCR1/PCR2 from EIF build output.
-    let expected_pcrs = BTreeMap::new();
+    let mut expected_pcrs = BTreeMap::new();
+
+    // Load expected PCR values from environment variables.
+    // Set EXPECTED_PCR0, EXPECTED_PCR1, EXPECTED_PCR2 from `nitro-cli build-enclave` output.
+    // If none are set, verification is skipped with a warning — NOT safe for production.
+    for (env_key, pcr_idx) in [
+        ("EXPECTED_PCR0", 0u8),
+        ("EXPECTED_PCR1", 1),
+        ("EXPECTED_PCR2", 2),
+    ] {
+        if let Ok(hex_val) = std::env::var(env_key) {
+            if !hex_val.is_empty() {
+                let bytes = hex::decode(&hex_val)
+                    .map_err(|e| anyhow::anyhow!("{env_key} is not valid hex: {e}"))?;
+                expected_pcrs.insert(pcr_idx, bytes);
+            }
+        }
+    }
+
+    if expected_pcrs.is_empty() {
+        eprintln!("WARNING: No EXPECTED_PCR0/1/2 set — accepting ANY enclave measurement.");
+        eprintln!("         This is insecure. Set PCR env vars for production use.");
+    }
+
     Ok(Box::new(confidential_ml_transport::NitroVerifier::new(
         expected_pcrs,
     )?))
