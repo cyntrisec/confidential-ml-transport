@@ -78,9 +78,19 @@ fn compute_stats(times: &[Duration]) -> Stats {
 fn print_stats(label: &str, times: &[Duration]) {
     let s = compute_stats(times);
     println!("  {label}:");
-    println!("    n={}, min={:.3}ms, max={:.3}ms", times.len(), dur_ms(s.min), dur_ms(s.max));
-    println!("    mean={:.3}ms, p50={:.3}ms, p95={:.3}ms, p99={:.3}ms",
-        dur_ms(s.mean), dur_ms(s.p50), dur_ms(s.p95), dur_ms(s.p99));
+    println!(
+        "    n={}, min={:.3}ms, max={:.3}ms",
+        times.len(),
+        dur_ms(s.min),
+        dur_ms(s.max)
+    );
+    println!(
+        "    mean={:.3}ms, p50={:.3}ms, p95={:.3}ms, p99={:.3}ms",
+        dur_ms(s.mean),
+        dur_ms(s.p50),
+        dur_ms(s.p95),
+        dur_ms(s.p99)
+    );
 }
 
 fn dur_ms(d: Duration) -> f64 {
@@ -133,7 +143,9 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch = SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone()).await?;
+        let mut ch =
+            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+                .await?;
         ch.send(Bytes::from_static(b"ECHO:warmup")).await?;
         let _ = ch.recv().await?;
         ch.shutdown().await.ok();
@@ -153,7 +165,9 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch = SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone()).await?;
+        let mut ch =
+            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+                .await?;
         let elapsed = start.elapsed();
         handshake_times.push(elapsed);
 
@@ -177,7 +191,9 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch = SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone()).await?;
+        let mut ch =
+            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+                .await?;
 
         let payload = "ECHO:".to_string() + &"x".repeat(64); // 64-byte echo payload
         for i in 0..args.rtt_rounds {
@@ -213,7 +229,9 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch = SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone()).await?;
+        let mut ch =
+            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+                .await?;
 
         let text = "The quick brown fox jumps over the lazy dog";
         for i in 0..args.inference_rounds {
@@ -242,9 +260,15 @@ async fn main() -> Result<()> {
     let rtt_mean = compute_stats(&rtt_times).mean;
     let inf_mean = compute_stats(&inference_times).mean;
     let inference_only = inf_mean.saturating_sub(rtt_mean);
-    println!("  Derived: inference-only (mean) = {:.3}ms", dur_ms(inference_only));
-    println!("    (inference RTT mean - transport RTT mean = {:.3}ms - {:.3}ms)",
-        dur_ms(inf_mean), dur_ms(rtt_mean));
+    println!(
+        "  Derived: inference-only (mean) = {:.3}ms",
+        dur_ms(inference_only)
+    );
+    println!(
+        "    (inference RTT mean - transport RTT mean = {:.3}ms - {:.3}ms)",
+        dur_ms(inf_mean),
+        dur_ms(rtt_mean)
+    );
     println!();
 
     // === JSON output ===
