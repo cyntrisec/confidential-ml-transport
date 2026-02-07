@@ -80,7 +80,7 @@ jobs:
       - run: cargo +nightly fuzz build
       - name: Smoke fuzz (30s per target)
         run: |
-          for target in fuzz_frame_decode fuzz_tensor_decode fuzz_handshake_resp fuzz_aead_open; do
+          for target in fuzz_frame_decode fuzz_tensor_decode fuzz_handshake_resp fuzz_handshake_init fuzz_aead_open; do
             echo "=== $target ==="
             cargo +nightly fuzz run "$target" "fuzz/seed_corpus/$target" -- -max_total_time=30 -runs=0
           done

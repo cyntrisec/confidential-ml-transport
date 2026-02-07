@@ -26,6 +26,11 @@ fn build_aad(
 }
 
 /// Build a 12-byte nonce from a u64 counter (big-endian, left-padded with zeros).
+///
+/// The upper 4 bytes are always zero. This is intentional: ChaCha20 requires a
+/// 12-byte nonce (RFC 8439 §2.3), and a u64 counter provides 2^64 messages per
+/// session which far exceeds practical use. The zero-padded prefix follows the
+/// standard counter-nonce construction.
 fn build_nonce(counter: u64) -> Nonce {
     let mut nonce_bytes = [0u8; 12];
     nonce_bytes[4..12].copy_from_slice(&counter.to_be_bytes());

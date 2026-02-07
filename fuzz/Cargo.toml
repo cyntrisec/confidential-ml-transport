@@ -37,4 +37,9 @@ name = "fuzz_aead_open"
 path = "fuzz_targets/fuzz_aead_open.rs"
 doc = false
 
+[[bin]]
+name = "fuzz_handshake_init"
+path = "fuzz_targets/fuzz_handshake_init.rs"
+doc = false
+
 [workspace]

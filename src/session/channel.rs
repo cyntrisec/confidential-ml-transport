@@ -148,6 +148,12 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
 
     /// Encrypt plaintext and construct a frame. The sealer's internal sequence
     /// counter is used as the frame header sequence, keeping them unified.
+    ///
+    /// Note: post-handshake sequence numbers start at 0 independently of the
+    /// handshake's Hello frame sequences. This is safe because Hello and Data
+    /// frames use different `FrameType` values, and `msg_type` is bound into
+    /// the AEAD associated data, so seq=0 for Hello and seq=0 for Data produce
+    /// distinct nonces.
     fn seal_frame(
         &mut self,
         msg_type: FrameType,

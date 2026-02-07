@@ -248,6 +248,10 @@ fn validate_handshake_frame(
 }
 
 /// Run the initiator (client) side of the handshake.
+///
+/// Individual frame reads are not independently timed; the caller is expected
+/// to wrap this function in a `tokio::time::timeout` (which `SecureChannel`
+/// does via `SessionConfig::handshake_timeout`).
 pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
     transport: &mut T,
     verifier: &dyn AttestationVerifier,
@@ -342,6 +346,10 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
 }
 
 /// Run the responder (server) side of the handshake.
+///
+/// Individual frame reads are not independently timed; the caller is expected
+/// to wrap this function in a `tokio::time::timeout` (which `SecureChannel`
+/// does via `SessionConfig::handshake_timeout`).
 pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     transport: &mut T,
     provider: &dyn AttestationProvider,
