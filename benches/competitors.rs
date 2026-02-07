@@ -2,6 +2,9 @@
 //!
 //! All measurements over tokio::io::duplex (in-process, no network).
 //! This isolates protocol overhead from network latency.
+//!
+//! Round-trip benchmarks use length-prefixed framing on ALL paths (raw, TLS, CMT)
+//! so the comparison is apples-to-apples: all paths pay encode/decode cost.
 
 use std::sync::Arc;
 
@@ -21,6 +24,28 @@ const PAYLOADS: &[(&str, usize)] = &[
     ("4k_activation", 4_096),
     ("384k_hidden", 393_216),
 ];
+
+// ---------------------------------------------------------------------------
+// Framing helpers (4-byte big-endian length prefix)
+// ---------------------------------------------------------------------------
+
+/// Write a length-prefixed frame: [u32 BE length][payload].
+async fn write_framed<W: AsyncWriteExt + Unpin>(w: &mut W, payload: &[u8]) -> std::io::Result<()> {
+    let len = (payload.len() as u32).to_be_bytes();
+    w.write_all(&len).await?;
+    w.write_all(payload).await?;
+    w.flush().await
+}
+
+/// Read a length-prefixed frame. Returns the payload.
+async fn read_framed<R: AsyncReadExt + Unpin>(r: &mut R) -> std::io::Result<Vec<u8>> {
+    let mut len_buf = [0u8; 4];
+    r.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; len];
+    r.read_exact(&mut buf).await?;
+    Ok(buf)
+}
 
 // ---------------------------------------------------------------------------
 // TLS setup helpers
@@ -51,14 +76,15 @@ fn make_tls_configs() -> (Arc<rustls::ServerConfig>, Arc<rustls::ClientConfig>) 
 }
 
 // ---------------------------------------------------------------------------
-// Handshake benchmarks
+// Handshake / session-establishment benchmarks
 // ---------------------------------------------------------------------------
 
 fn bench_handshake(c: &mut Criterion) {
     let mut group = c.benchmark_group("competitors/handshake");
 
-    // Raw TCP: no handshake, just duplex creation.
-    group.bench_function("raw_tcp", |b| {
+    // Baseline: duplex creation only (no protocol handshake).
+    // Included to show the floor; this is NOT a handshake.
+    group.bench_function("duplex_creation_baseline", |b| {
         let rt = Runtime::new().unwrap();
         b.iter(|| {
             rt.block_on(async {
@@ -69,6 +95,8 @@ fn bench_handshake(c: &mut Criterion) {
     });
 
     // TLS 1.3 (rustls): full handshake over duplex.
+    // Cipher suite is whatever rustls negotiates by default (typically AES-128-GCM
+    // or AES-256-GCM with AES-NI, or ChaCha20-Poly1305 without AES-NI).
     let (server_config, client_config) = make_tls_configs();
     group.bench_function("tls13_rustls", |b| {
         let rt = Runtime::new().unwrap();
@@ -92,7 +120,7 @@ fn bench_handshake(c: &mut Criterion) {
         });
     });
 
-    // confidential-ml-transport: full 3-message handshake.
+    // confidential-ml-transport: full 3-message handshake + key derivation.
     let provider = MockProvider::new();
     let verifier = MockVerifier::new();
     group.bench_function("cmt_attestation", |b| {
@@ -116,6 +144,11 @@ fn bench_handshake(c: &mut Criterion) {
 
 // ---------------------------------------------------------------------------
 // Round-trip latency benchmarks (established session)
+//
+// All paths use length-prefixed framing so the comparison is fair:
+// - Raw TCP: 4-byte length prefix + payload
+// - TLS 1.3: 4-byte length prefix + payload (over TLS record layer)
+// - CMT: CMT frame header + AEAD-encrypted payload
 // ---------------------------------------------------------------------------
 
 fn bench_round_trip(c: &mut Criterion) {
@@ -125,9 +158,9 @@ fn bench_round_trip(c: &mut Criterion) {
         let payload = vec![0xABu8; size];
         group.throughput(Throughput::Bytes(size as u64));
 
-        // Raw TCP: write + read over duplex (no framing, no crypto).
+        // Raw TCP with length-prefixed framing.
         group.bench_with_input(
-            BenchmarkId::new("raw_tcp", label),
+            BenchmarkId::new("raw_tcp_framed", label),
             &payload,
             |b, payload| {
                 let rt = Runtime::new().unwrap();
@@ -135,20 +168,12 @@ fn bench_round_trip(c: &mut Criterion) {
                 let (client_w, client_r) = rt.block_on(async {
                     let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
 
-                    // Echo server.
+                    // Framed echo server.
                     tokio::spawn(async move {
                         let (mut r, mut w) = tokio::io::split(server);
-                        let mut buf = vec![0u8; 1024 * 1024];
-                        loop {
-                            match r.read(&mut buf).await {
-                                Ok(0) | Err(_) => break,
-                                Ok(n) => {
-                                    if w.write_all(&buf[..n]).await.is_err()
-                                        || w.flush().await.is_err()
-                                    {
-                                        break;
-                                    }
-                                }
+                        while let Ok(data) = read_framed(&mut r).await {
+                            if write_framed(&mut w, &data).await.is_err() {
+                                break;
                             }
                         }
                     });
@@ -166,23 +191,21 @@ fn bench_round_trip(c: &mut Criterion) {
                     let p = payload.clone();
                     rt.block_on(async {
                         let mut w = w.lock().await;
-                        w.write_all(&p).await.unwrap();
-                        w.flush().await.unwrap();
+                        write_framed(&mut *w, &p).await.unwrap();
                         drop(w);
 
                         let mut r = r.lock().await;
-                        let mut buf = vec![0u8; p.len()];
-                        r.read_exact(&mut buf).await.unwrap();
+                        let buf = read_framed(&mut *r).await.unwrap();
                         black_box(buf);
                     });
                 });
             },
         );
 
-        // TLS 1.3: write + read over TLS duplex.
+        // TLS 1.3 with length-prefixed framing.
         let (server_config, client_config) = make_tls_configs();
         group.bench_with_input(
-            BenchmarkId::new("tls13_rustls", label),
+            BenchmarkId::new("tls13_rustls_framed", label),
             &payload,
             |b, payload| {
                 let rt = Runtime::new().unwrap();
@@ -198,20 +221,12 @@ fn bench_round_trip(c: &mut Criterion) {
                     );
 
                     let server_tls = server_tls.unwrap();
-                    // Echo server on TLS.
+                    // Framed echo server on TLS.
                     tokio::spawn(async move {
                         let (mut r, mut w) = tokio::io::split(server_tls);
-                        let mut buf = vec![0u8; 1024 * 1024];
-                        loop {
-                            match r.read(&mut buf).await {
-                                Ok(0) | Err(_) => break,
-                                Ok(n) => {
-                                    if w.write_all(&buf[..n]).await.is_err()
-                                        || w.flush().await.is_err()
-                                    {
-                                        break;
-                                    }
-                                }
+                        while let Ok(data) = read_framed(&mut r).await {
+                            if write_framed(&mut w, &data).await.is_err() {
+                                break;
                             }
                         }
                     });
@@ -230,13 +245,11 @@ fn bench_round_trip(c: &mut Criterion) {
                     let p = payload.clone();
                     rt.block_on(async {
                         let mut w = w.lock().await;
-                        w.write_all(&p).await.unwrap();
-                        w.flush().await.unwrap();
+                        write_framed(&mut *w, &p).await.unwrap();
                         drop(w);
 
                         let mut r = r.lock().await;
-                        let mut buf = vec![0u8; p.len()];
-                        r.read_exact(&mut buf).await.unwrap();
+                        let buf = read_framed(&mut *r).await.unwrap();
                         black_box(buf);
                     });
                 });

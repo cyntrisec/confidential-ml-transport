@@ -122,35 +122,41 @@ cargo bench --bench frame_codec
 
 ## Competitor Comparison (local dev, tokio::io::duplex 1MB, 20 samples)
 
-Side-by-side: raw TCP (unencrypted duplex), TLS 1.3 (rustls 0.23, AES-256-GCM), CMT SecureChannel (ChaCha20-Poly1305 + X25519 + mock attestation).
+Side-by-side: raw TCP (length-prefixed framing, unencrypted), TLS 1.3 (rustls 0.23, length-prefixed framing over TLS record layer, rustls-default cipher suite), CMT SecureChannel (CMT frame header + ChaCha20-Poly1305 AEAD + X25519 + mock attestation).
 
-### Handshake Latency
+All round-trip paths use equivalent framing (4-byte length prefix for raw/TLS, CMT frame header for CMT) so the comparison isolates encryption overhead, not framing differences.
 
-| Transport | p50 | vs TLS 1.3 |
-|-----------|-----|------------|
-| Raw TCP (duplex creation only) | 247 ns | — |
-| TLS 1.3 (rustls, full handshake) | 535 µs | 1.0x |
-| **CMT (3-msg, mock attestation)** | **182 µs** | **2.9x faster** |
+**Note:** The TLS cipher suite is whatever rustls negotiates by default (typically AES-128-GCM or AES-256-GCM with AES-NI, ChaCha20-Poly1305 without). The suite is not pinned in the benchmark code.
 
-CMT's 3-message handshake is significantly faster than TLS 1.3 because it avoids X.509 certificate chain validation. Real attestation (Nitro/SEV-SNP) would add 1-5 ms.
+### Session Establishment
 
-### Round-Trip Latency (established session, echo server)
+| Transport | p50 | vs TLS 1.3 | Notes |
+|-----------|-----|------------|-------|
+| Duplex creation (baseline) | 243 ns | — | Object creation only, no protocol handshake |
+| TLS 1.3 (rustls, full handshake) | 589 µs | 1.0x | X.509 cert chain validation |
+| **CMT (3-msg, mock attestation)** | **252 µs** | **2.3x faster** | X25519 + HKDF key derivation |
 
-| Payload | Raw TCP | TLS 1.3 | CMT | CMT overhead vs raw |
-|---------|---------|---------|-----|---------------------|
-| 1536 B (embedding) | 13.2 µs | 14.3 µs | 23.5 µs | 1.78x |
-| 4 KB (activation) | 14.9 µs | 20.3 µs | 35.4 µs | 2.38x |
-| 384 KB (hidden state) | 100 µs | 439 µs | 1,610 µs | 16.1x |
+CMT's 3-message handshake is faster than TLS 1.3 because it avoids X.509 certificate chain validation. Real attestation (Nitro/SEV-SNP) would add 1-5 ms.
+
+### Round-Trip Latency (established session, framed echo server)
+
+All paths use equivalent framing (4-byte length prefix for raw/TLS, CMT frame header for CMT).
+
+| Payload | Raw TCP (framed) | TLS 1.3 (framed) | CMT | CMT overhead vs raw |
+|---------|-------------------|-------------------|-----|---------------------|
+| 1536 B (embedding) | 10.9 µs | 16.1 µs | 26.1 µs | 2.4x |
+| 4 KB (activation) | 12.1 µs | 21.0 µs | 43.6 µs | 3.6x |
+| 384 KB (hidden state) | 129 µs | 479 µs | 1,777 µs | 13.8x |
 
 ### Round-Trip Throughput
 
-| Payload | Raw TCP | TLS 1.3 | CMT |
-|---------|---------|---------|-----|
-| 1536 B | 119 MiB/s | 102 MiB/s | 62 MiB/s |
-| 4 KB | 262 MiB/s | 193 MiB/s | 110 MiB/s |
-| 384 KB | 3.65 GiB/s | 855 MiB/s | 233 MiB/s |
+| Payload | Raw TCP (framed) | TLS 1.3 (framed) | CMT |
+|---------|-------------------|-------------------|-----|
+| 1536 B | 135 MiB/s | 91 MiB/s | 56 MiB/s |
+| 4 KB | 322 MiB/s | 186 MiB/s | 90 MiB/s |
+| 384 KB | 2.84 GiB/s | 782 MiB/s | 211 MiB/s |
 
-**Analysis:** For small payloads (1.5-4 KB, typical ML embeddings), CMT adds ~10-20 µs vs raw TCP — negligible against model inference latency (~100 ms). For large payloads (384 KB), CMT's per-frame AEAD dominates. TLS 1.3 benefits from AES-NI hardware acceleration on Intel CPUs while CMT uses software ChaCha20.
+**Analysis:** For small payloads (1.5-4 KB, typical ML embeddings), CMT adds ~15-30 µs vs raw TCP — negligible against model inference latency (~100 ms). For large payloads (384 KB), CMT's per-frame AEAD dominates. TLS 1.3 may benefit from AES-NI hardware acceleration on Intel CPUs while CMT uses software ChaCha20.
 
 **Reproduce:** `cargo bench --bench competitors`
 

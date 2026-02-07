@@ -187,7 +187,7 @@ def confidence_interval(estimates_file):
     return ci["lower_bound"], ci["upper_bound"]
 
 def burst_count(size):
-    return max(1, 1048576 // size)
+    return max(1, 4 * 1048576 // size)
 
 # ── Extract all data ──
 
