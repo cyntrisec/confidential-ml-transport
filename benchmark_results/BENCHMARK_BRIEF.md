@@ -96,7 +96,7 @@ cargo bench --bench throughput
 cargo bench --bench reconnect
 cargo bench --bench frame_codec
 
-# On a cloud VM (see CLAUDE.md "Running Cloud Benchmarks" for full setup)
+# On a cloud VM
 # AWS:
 #   Instance: m6i.xlarge (4 vCPU, 16 GiB)
 #   AMI: Amazon Linux 2023
