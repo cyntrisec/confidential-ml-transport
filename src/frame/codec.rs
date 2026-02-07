@@ -62,8 +62,10 @@ impl Decoder for FrameCodec {
         // Wait for full payload.
         let payload_len = header.payload_len as usize;
         if src.len() < payload_len {
-            // Reserve space so the next read has room.
-            src.reserve(payload_len - src.len());
+            // Reserve incrementally (capped at 64 KB) to avoid a single large
+            // allocation from an attacker-controlled header before payload arrival.
+            let deficit = payload_len - src.len();
+            src.reserve(deficit.min(64 * 1024));
             self.current_header = Some(header);
             return Ok(None);
         }

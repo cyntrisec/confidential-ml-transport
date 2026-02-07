@@ -153,8 +153,20 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Validate that the payload length fits in the wire format (u32) and does not
+    /// exceed `MAX_PAYLOAD_SIZE`. Returns the validated length.
+    fn validated_payload_len(payload: &Bytes) -> u32 {
+        let len = payload.len();
+        assert!(
+            len <= MAX_PAYLOAD_SIZE as usize,
+            "payload length {len} exceeds MAX_PAYLOAD_SIZE ({MAX_PAYLOAD_SIZE})"
+        );
+        len as u32
+    }
+
     /// Create a new data frame.
     pub fn data(sequence: u32, payload: Bytes, encrypted: bool) -> Self {
+        let payload_len = Self::validated_payload_len(&payload);
         let mut flags = Flags::empty();
         if encrypted {
             flags = Flags(flags.0 | Flags::ENCRYPTED);
@@ -165,7 +177,7 @@ impl Frame {
                 msg_type: FrameType::Data,
                 flags,
                 sequence,
-                payload_len: payload.len() as u32,
+                payload_len,
             },
             payload,
         }
@@ -173,13 +185,14 @@ impl Frame {
 
     /// Create a hello frame (used during handshake).
     pub fn hello(sequence: u32, payload: Bytes) -> Self {
+        let payload_len = Self::validated_payload_len(&payload);
         Self {
             header: FrameHeader {
                 version: PROTOCOL_VERSION,
                 msg_type: FrameType::Hello,
                 flags: Flags::empty(),
                 sequence,
-                payload_len: payload.len() as u32,
+                payload_len,
             },
             payload,
         }
@@ -216,13 +229,14 @@ impl Frame {
     /// Create an error frame.
     pub fn error(sequence: u32, message: &str) -> Self {
         let payload = Bytes::copy_from_slice(message.as_bytes());
+        let payload_len = Self::validated_payload_len(&payload);
         Self {
             header: FrameHeader {
                 version: PROTOCOL_VERSION,
                 msg_type: FrameType::Error,
                 flags: Flags::empty(),
                 sequence,
-                payload_len: payload.len() as u32,
+                payload_len,
             },
             payload,
         }
@@ -230,6 +244,7 @@ impl Frame {
 
     /// Create a tensor frame.
     pub fn tensor(sequence: u32, payload: Bytes, encrypted: bool) -> Self {
+        let payload_len = Self::validated_payload_len(&payload);
         let mut flags = Flags(Flags::TENSOR_PAYLOAD);
         if encrypted {
             flags = Flags(flags.0 | Flags::ENCRYPTED);
@@ -240,7 +255,7 @@ impl Frame {
                 msg_type: FrameType::Tensor,
                 flags,
                 sequence,
-                payload_len: payload.len() as u32,
+                payload_len,
             },
             payload,
         }

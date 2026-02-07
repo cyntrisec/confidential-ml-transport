@@ -61,10 +61,12 @@ fn encode_confirmation(confirmation_hash: &[u8; 32]) -> Bytes {
 }
 
 fn parse_initiator_hello(payload: &[u8]) -> Result<([u8; 32], [u8; 32]), SessionError> {
-    if payload.len() < 1 + 32 + 32 {
-        return Err(SessionError::HandshakeFailed(
-            "initiator hello too short".into(),
-        ));
+    const EXPECTED_LEN: usize = 1 + 32 + 32;
+    if payload.len() != EXPECTED_LEN {
+        return Err(SessionError::HandshakeFailed(format!(
+            "initiator hello: expected {EXPECTED_LEN} bytes, got {}",
+            payload.len()
+        )));
     }
     if payload[0] != 1 {
         return Err(SessionError::UnexpectedMessage {
@@ -82,7 +84,8 @@ fn parse_initiator_hello(payload: &[u8]) -> Result<([u8; 32], [u8; 32]), Session
 fn parse_responder_hello(
     payload: &[u8],
 ) -> Result<([u8; 32], [u8; 32], AttestationDocument), SessionError> {
-    if payload.len() < 1 + 32 + 32 + 4 {
+    const MIN_LEN: usize = 1 + 32 + 32 + 4;
+    if payload.len() < MIN_LEN {
         return Err(SessionError::HandshakeFailed(
             "responder hello too short".into(),
         ));
@@ -99,20 +102,24 @@ fn parse_responder_hello(
     nonce.copy_from_slice(&payload[33..65]);
     let mut cursor = &payload[65..];
     let doc_len = cursor.get_u32() as usize;
-    if cursor.len() < doc_len {
-        return Err(SessionError::HandshakeFailed(
-            "responder hello: attestation doc truncated".into(),
-        ));
+    let expected_total = MIN_LEN + doc_len;
+    if payload.len() != expected_total {
+        return Err(SessionError::HandshakeFailed(format!(
+            "responder hello: expected {expected_total} bytes, got {}",
+            payload.len()
+        )));
     }
     let doc = AttestationDocument::new(cursor[..doc_len].to_vec());
     Ok((pk, nonce, doc))
 }
 
 fn parse_confirmation(payload: &[u8]) -> Result<[u8; 32], SessionError> {
-    if payload.len() < 1 + 32 {
-        return Err(SessionError::HandshakeFailed(
-            "confirmation too short".into(),
-        ));
+    const EXPECTED_LEN: usize = 1 + 32;
+    if payload.len() != EXPECTED_LEN {
+        return Err(SessionError::HandshakeFailed(format!(
+            "confirmation: expected {EXPECTED_LEN} bytes, got {}",
+            payload.len()
+        )));
     }
     if payload[0] != 3 {
         return Err(SessionError::UnexpectedMessage {
