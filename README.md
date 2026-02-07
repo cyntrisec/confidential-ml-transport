@@ -367,8 +367,9 @@ cargo test --test proxy_integration
 # Benchmarks
 cargo bench --bench frame_codec
 
-# Fuzz the frame decoder (requires nightly)
-cd fuzz && cargo +nightly fuzz run fuzz_frame_decode -- -max_total_time=60
+# Fuzz targets (requires nightly): frame_decode, tensor_decode, handshake_resp, aead_open
+cargo +nightly fuzz run fuzz_frame_decode fuzz/seed_corpus/fuzz_frame_decode -- -max_total_time=60
+cargo +nightly fuzz run fuzz_handshake_resp fuzz/seed_corpus/fuzz_handshake_resp -- -max_total_time=60
 
 # Run the echo server example (requires mock feature)
 cargo run --example echo_server --features mock

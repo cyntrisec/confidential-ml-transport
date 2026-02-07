@@ -10,13 +10,31 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 bytes = "1.5"
+tokio = { version = "1.38", features = ["rt", "io-util", "macros"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 
 [dependencies.confidential-ml-transport]
 path = ".."
+features = ["mock"]
 
 [[bin]]
 name = "fuzz_frame_decode"
 path = "fuzz_targets/fuzz_frame_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_tensor_decode"
+path = "fuzz_targets/fuzz_tensor_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_handshake_resp"
+path = "fuzz_targets/fuzz_handshake_resp.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_aead_open"
+path = "fuzz_targets/fuzz_aead_open.rs"
 doc = false
 
 [workspace]
