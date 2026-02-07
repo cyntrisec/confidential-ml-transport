@@ -4,26 +4,47 @@ Attestation-bound encrypted tensor transport for confidential ML inference over 
 
 ## Quickstart
 
+Try it in 60 seconds — no project setup needed:
+
 ```bash
-# Add to your project (with mock attestation for development)
+git clone https://github.com/cyntrisec/confidential-ml-transport.git
+cd confidential-ml-transport
+cargo run --example echo_server --features mock
+```
+
+This runs an encrypted echo server and client over TCP with a full attested handshake (mock attestation). You should see:
+
+```
+echo server listening on 127.0.0.1:9876
+accepted connection from 127.0.0.1:...
+[client] connected and handshake complete
+[client] sending: echo request #0
+[server] handshake complete
+[server] echoing: echo request #0
+[client] received: echo request #0
+...
+done!
+```
+
+To use in your own project:
+
+```bash
 cargo add confidential-ml-transport --features mock
 ```
 
 ```rust
 use confidential_ml_transport::{
     MockProvider, MockVerifier, SecureChannel, SessionConfig,
-    session::channel::Message,
 };
 use bytes::Bytes;
 
-// Server
-let listener = tokio::net::TcpListener::bind("127.0.0.1:9876").await?;
+// Server: accept an attested encrypted connection
 let (stream, _) = listener.accept().await?;
 let mut server = SecureChannel::accept_with_attestation(
     stream, &MockProvider::new(), SessionConfig::default(),
 ).await?;
 
-// Client
+// Client: connect with attestation verification
 let stream = tokio::net::TcpStream::connect("127.0.0.1:9876").await?;
 let mut client = SecureChannel::connect_with_attestation(
     stream, &MockVerifier::new(), SessionConfig::default(),
