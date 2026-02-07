@@ -64,6 +64,9 @@ pub async fn run_server_proxy(
         let session_config = config.session_config.clone();
 
         tokio::spawn(async move {
+            // Hold permit as `_permit` so it is released when this task exits,
+            // including on panic (no explicit drop needed).
+            let _permit = permit;
             tracing::debug!(%peer_addr, "accepted connection");
             if let Err(e) =
                 handle_server_connection(stream, provider.as_ref(), backend_addr, session_config)
@@ -71,7 +74,6 @@ pub async fn run_server_proxy(
             {
                 tracing::warn!(%peer_addr, error = %e, "connection handler error");
             }
-            drop(permit);
         });
     }
 }
