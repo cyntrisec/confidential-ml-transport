@@ -8,7 +8,7 @@ Attestation-bound encrypted tensor transport for confidential ML inference over 
 
 **Key properties:**
 
-- **Binary framing** — 13-byte fixed header, zero-copy tensor sub-headers, 32 MiB max payload
+- **Binary framing** — 13-byte fixed header, compact tensor sub-headers with 8-byte-aligned data, 32 MiB max payload
 - **Attestation-bound sessions** — session keys are derived from attestation documents, binding the cryptographic channel to a verified TEE identity
 - **Full channel encryption** — all post-handshake frames (data, tensor, heartbeat, shutdown, error) are encrypted and authenticated via AEAD
 - **Key material protection** — symmetric keys zeroized on drop, contributory DH check, domain-separated session ID
@@ -28,7 +28,7 @@ Attestation-bound encrypted tensor transport for confidential ML inference over 
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|         magic (0xCF4D)        |  version (1)  |   msg_type    |
+|         magic (0xCF4D)        |  version (2)  |   msg_type    |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |    flags      |                  sequence                     |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -271,14 +271,17 @@ A built-in `NitroProvider` and `NitroVerifier` are available behind the `nitro` 
 
 | Feature | Default | Description |
 |---|---|---|
-| `mock` | Yes | Mock attestation provider/verifier for testing |
+| `mock` | No | Mock attestation provider/verifier for testing |
 | `tcp` | Yes | TCP transport helpers and transparent proxy |
 | `vsock` | No | VSock transport via `tokio-vsock` |
 | `nitro` | No | AWS Nitro Enclave attestation (NitroProvider/NitroVerifier) |
 
 ```bash
-# Default (mock + tcp)
+# Default (tcp only)
 cargo build
+
+# With mock attestation for testing
+cargo build --features mock
 
 # With VSock support
 cargo build --features vsock
@@ -288,18 +291,12 @@ cargo build --features nitro
 
 # All features
 cargo build --all-features
-
-# Minimal
-cargo build --no-default-features --features mock,tcp
 ```
 
 ## Testing
 
 ```bash
-# All tests (unit + proptest + integration)
-cargo test
-
-# All features including Nitro verifier tests
+# All tests (unit + proptest + integration, requires mock feature)
 cargo test --all-features
 
 # Property-based tests only
@@ -351,7 +348,7 @@ cargo bench --bench reconnect
 |---|---|---|
 | Key exchange | X25519 (Diffie-Hellman) | Ephemeral shared secret |
 | Key derivation | HKDF-SHA256 | Derive send/recv keys from shared secret + transcript |
-| Encryption | ChaCha20Poly1305 | Per-message AEAD with AAD = `version \|\| session_id \|\| sequence` |
+| Encryption | ChaCha20Poly1305 | Per-message AEAD with AAD = `version \|\| msg_type \|\| flags \|\| session_id \|\| sequence` |
 | Transcript | SHA256 | Bind session to attestation + public keys + nonces |
 | Replay protection | Monotonic u64 sequence | Reject any sequence <= last accepted |
 

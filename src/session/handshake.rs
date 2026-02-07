@@ -160,12 +160,16 @@ fn compute_confirmation(
 }
 
 /// Derive a session ID from the transcript hash via HKDF (domain-separated from key material).
-fn derive_session_id(transcript_hash: &[u8; 32]) -> [u8; 32] {
+fn derive_session_id(
+    transcript_hash: &[u8; 32],
+) -> Result<[u8; 32], crate::error::Error> {
     let hkdf = Hkdf::<Sha256>::new(None, transcript_hash);
     let mut session_id = [0u8; 32];
     hkdf.expand(b"cmt-session-id", &mut session_id)
-        .expect("32 bytes is valid for SHA256 HKDF");
-    session_id
+        .map_err(|_| {
+            crate::error::Error::Crypto(crate::error::CryptoError::HkdfExpandFailed)
+        })?;
+    Ok(session_id)
 }
 
 // -- Transport helpers --
@@ -324,7 +328,7 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
         hpke::derive_session_keys(&keypair.secret, &resp_pk, &transcript_hash, true)?;
 
     // Derive session_id via HKDF (domain-separated from transcript_hash).
-    let session_id = derive_session_id(&transcript_hash);
+    let session_id = derive_session_id(&transcript_hash)?;
 
     // Step 4: Send confirmation (seq=1), binding both keys.
     let confirmation_hash = compute_confirmation(&session_id, &send_key, &recv_key);
@@ -392,7 +396,7 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
         hpke::derive_session_keys(&keypair.secret, &init_pk, &transcript_hash, false)?;
 
     // Derive session_id via HKDF (domain-separated from transcript_hash).
-    let session_id = derive_session_id(&transcript_hash);
+    let session_id = derive_session_id(&transcript_hash)?;
 
     // Step 3: Receive and verify confirmation (expect seq=1).
     let confirm_frame = recv_frame(transport, &mut read_buf).await?;

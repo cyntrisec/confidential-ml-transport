@@ -93,6 +93,9 @@ struct NitroAttestationDoc {
     nonce: Option<Vec<u8>>,
 }
 
+/// Default maximum age for attestation documents: 5 minutes.
+const DEFAULT_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// Verifier for AWS Nitro Enclave attestation documents.
 ///
 /// Validates COSE_Sign1-wrapped CBOR attestation documents by:
@@ -104,6 +107,9 @@ struct NitroAttestationDoc {
 pub struct NitroVerifier {
     root_cert: X509,
     expected_pcrs: BTreeMap<usize, Vec<u8>>,
+    /// Maximum age of an attestation document. Documents older than this are
+    /// rejected as stale (prevents replay of old attestation documents).
+    max_age: std::time::Duration,
 }
 
 impl NitroVerifier {
@@ -111,6 +117,7 @@ impl NitroVerifier {
     ///
     /// `expected_pcrs` maps PCR index (0..15) to expected measurement bytes.
     /// Only the PCRs present in this map are checked; others are ignored.
+    /// Attestation documents older than 5 minutes are rejected by default.
     pub fn new(expected_pcrs: BTreeMap<usize, Vec<u8>>) -> Result<Self, AttestError> {
         let root_cert = X509::from_pem(AWS_NITRO_ROOT_CA_PEM).map_err(|e| {
             AttestError::VerificationFailed(format!("failed to parse bundled root CA: {e}"))
@@ -118,6 +125,7 @@ impl NitroVerifier {
         Ok(Self {
             root_cert,
             expected_pcrs,
+            max_age: DEFAULT_MAX_AGE,
         })
     }
 
@@ -132,7 +140,14 @@ impl NitroVerifier {
         Ok(Self {
             root_cert,
             expected_pcrs,
+            max_age: DEFAULT_MAX_AGE,
         })
+    }
+
+    /// Set the maximum accepted age for attestation documents.
+    pub fn with_max_age(mut self, max_age: std::time::Duration) -> Self {
+        self.max_age = max_age;
+        self
     }
 }
 
@@ -167,6 +182,30 @@ impl AttestationVerifier for NitroVerifier {
             return Err(AttestError::VerificationFailed(
                 "timestamp must be non-zero".into(),
             ));
+        }
+
+        // Validate timestamp freshness.
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if now_ms > 0 {
+            let max_age_ms = self.max_age.as_millis() as u64;
+            if att_doc.timestamp > now_ms {
+                let drift = att_doc.timestamp - now_ms;
+                // Allow up to 60 seconds of clock drift into the future.
+                if drift > 60_000 {
+                    return Err(AttestError::VerificationFailed(format!(
+                        "attestation timestamp is {}ms in the future",
+                        drift
+                    )));
+                }
+            } else {
+                let age_ms = now_ms - att_doc.timestamp;
+                if age_ms > max_age_ms {
+                    return Err(AttestError::Expired);
+                }
+            }
         }
 
         // Validate module_id is non-empty.
@@ -465,6 +504,22 @@ fn validate_cert_chain(
         ));
     }
 
+    // Verify the leaf cert's subject != issuer (self-signed CA check).
+    // A genuine Nitro leaf is issued by an intermediate, never self-signed.
+    // This is defense-in-depth — X509StoreContext::verify_cert already validates
+    // the chain constraints, but we explicitly reject self-signed leaves to
+    // prevent misuse of a CA cert as a signing leaf.
+    if leaf
+        .subject_name()
+        .try_cmp(leaf.issuer_name())
+        .ok()
+        == Some(std::cmp::Ordering::Equal)
+    {
+        return Err(AttestError::VerificationFailed(
+            "leaf certificate is self-signed (subject == issuer)".into(),
+        ));
+    }
+
     Ok(())
 }
 
@@ -724,6 +779,13 @@ mod tests {
         (ec_key, cert)
     }
 
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }
+
     /// Build a complete synthetic attestation document (COSE_Sign1 tagged bytes).
     #[allow(clippy::too_many_arguments)]
     fn build_synthetic_attestation(
@@ -743,7 +805,7 @@ mod tests {
         let payload = encode_attestation_doc(
             "i-test-module-1234",
             "SHA384",
-            1700000000000, // timestamp in ms
+            now_ms(),
             pcrs,
             &leaf_der,
             &[ca_der],
@@ -936,7 +998,7 @@ mod tests {
         map_entries.push((Value::Text("digest".into()), Value::Text("SHA384".into())));
         map_entries.push((
             Value::Text("timestamp".into()),
-            Value::Integer(1700000000000u64.into()),
+            Value::Integer(now_ms().into()),
         ));
         let pcr_entries: Vec<(Value, Value)> =
             vec![(Value::Integer(0u64.into()), Value::Bytes(vec![0xAA; 48]))];
@@ -995,7 +1057,7 @@ mod tests {
         let payload = encode_attestation_doc(
             "i-test-module-1234",
             "SHA384",
-            1700000000000,
+            now_ms(),
             &pcrs,
             &leaf_der,
             std::slice::from_ref(&ca_der),
@@ -1014,7 +1076,7 @@ mod tests {
         let tampered_payload = encode_attestation_doc(
             "i-TAMPERED-module",
             "SHA384",
-            1700000000000,
+            now_ms(),
             &pcrs,
             &leaf_der,
             std::slice::from_ref(&ca_der),

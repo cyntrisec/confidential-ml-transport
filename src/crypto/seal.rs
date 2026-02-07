@@ -42,9 +42,15 @@ pub struct SealingContext {
 impl Drop for SealingContext {
     fn drop(&mut self) {
         self.session_id.zeroize();
-        // ChaCha20Poly1305 does not impl Zeroize, but it will be dropped.
-        // The key material inside it is stack-allocated and will be overwritten.
         self.sequence = 0;
+        // ChaCha20Poly1305 does not impl Zeroize. Use volatile writes to
+        // clear the cipher struct (which contains the key) on drop.
+        unsafe {
+            let ptr = &mut self.cipher as *mut ChaCha20Poly1305 as *mut u8;
+            let size = core::mem::size_of::<ChaCha20Poly1305>();
+            core::ptr::write_bytes(ptr, 0, size);
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+        }
     }
 }
 
@@ -113,6 +119,14 @@ impl Drop for OpeningContext {
     fn drop(&mut self) {
         self.session_id.zeroize();
         self.last_sequence = None;
+        // ChaCha20Poly1305 does not impl Zeroize. Use volatile writes to
+        // clear the cipher struct (which contains the key) on drop.
+        unsafe {
+            let ptr = &mut self.cipher as *mut ChaCha20Poly1305 as *mut u8;
+            let size = core::mem::size_of::<ChaCha20Poly1305>();
+            core::ptr::write_bytes(ptr, 0, size);
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+        }
     }
 }
 

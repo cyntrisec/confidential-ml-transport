@@ -163,6 +163,10 @@ impl OwnedTensor {
         if buf.len() < padding {
             return Err(FrameError::IncompleteTensorHeader);
         }
+        // Validate padding bytes are all zero (prevents hidden data in padding).
+        if buf[..padding].iter().any(|&b| b != 0) {
+            return Err(FrameError::InvalidPadding);
+        }
         buf.advance(padding);
 
         // Remaining bytes are tensor data.

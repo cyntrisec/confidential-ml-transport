@@ -135,7 +135,10 @@ impl AttestationProvider for SyntheticNitroProvider {
         let payload = encode_attestation_doc(
             "i-integration-test",
             "SHA384",
-            1700000000000,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
             &self.pcrs,
             &leaf_der,
             &[ca_der],

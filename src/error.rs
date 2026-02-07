@@ -30,6 +30,9 @@ pub enum FrameError {
     #[error("incomplete tensor header")]
     IncompleteTensorHeader,
 
+    #[error("tensor padding contains non-zero bytes")]
+    InvalidPadding,
+
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 }
