@@ -43,9 +43,14 @@ nitro = ["dep:coset", "dep:ciborium", "dep:openssl", "dep:aws-nitro-enclaves-nsm
 proptest = "1.4"
 tokio = { version = "1.38", features = ["full", "test-util"] }
 criterion = { version = "0.5", features = ["async_tokio"] }
+serde_json = "1"
 
 [[bench]]
 name = "frame_codec"
+harness = false
+
+[[bench]]
+name = "confidential_overhead"
 harness = false
 
 [[example]]
