@@ -62,6 +62,10 @@ harness = false
 name = "throughput"
 harness = false
 
+[[bench]]
+name = "reconnect"
+harness = false
+
 [[example]]
 name = "echo_server"
 required-features = ["tcp", "mock"]
