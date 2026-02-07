@@ -13,9 +13,10 @@ fn bench_handshake(c: &mut Criterion) {
     let verifier = MockVerifier::new();
 
     // Each iteration performs a full 3-message handshake over a fresh duplex.
-    // This is "warm" latency (after criterion warmup); cold first-connect latency
-    // is higher due to one-time allocations and CPU cache misses.
-    group.bench_function("cold_connect", |b| {
+    // This measures per-session handshake cost on a warmed process (after
+    // criterion warmup). True first-ever-process cold start is higher due to
+    // one-time allocations and CPU cache misses.
+    group.bench_function("fresh_session", |b| {
         let rt = Runtime::new().unwrap();
 
         b.iter(|| {

@@ -102,7 +102,7 @@ missing=0
 
 # Handshake
 for file in "estimates.json" "sample.json"; do
-    f=$(criterion_path "handshake" "cold_connect" "" "$file")
+    f=$(criterion_path "handshake" "fresh_session" "" "$file")
     if [[ ! -f "$f" ]]; then
         echo "ERROR: missing $f" >&2
         missing=$((missing + 1))
@@ -194,8 +194,8 @@ def burst_count(size):
 date_str = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 # Handshake
-hs_p50, hs_p95, hs_p99 = percentiles(sample_path("handshake", "cold_connect"))
-hs_ci_lo, hs_ci_hi = confidence_interval(est_path("handshake", "cold_connect"))
+hs_p50, hs_p95, hs_p99 = percentiles(sample_path("handshake", "fresh_session"))
+hs_ci_lo, hs_ci_hi = confidence_interval(est_path("handshake", "fresh_session"))
 
 # Overhead
 overhead_labels = [("1536b_embedding", 1536), ("4k_activation", 4096), ("384k_hidden", 393216)]
@@ -327,10 +327,11 @@ p("## 1. Handshake Latency")
 p("")
 p(f"| Metric | p50 | p95 | p99 | 95% CI |")
 p(f"|--------|-----|-----|-----|--------|")
-p(f"| Cold connect | {fmt_ns(hs['p50_ns'])} | {fmt_ns(hs['p95_ns'])} | {fmt_ns(hs['p99_ns'])} | {fmt_ci_ns(hs['ci_lower_ns'], hs['ci_upper_ns'])} |")
+p(f"| Fresh session | {fmt_ns(hs['p50_ns'])} | {fmt_ns(hs['p95_ns'])} | {fmt_ns(hs['p99_ns'])} | {fmt_ci_ns(hs['ci_lower_ns'], hs['ci_upper_ns'])} |")
 p("")
 p("Full 3-message handshake: X25519 keygen, mock attestation, HKDF derivation.")
-p("No session resumption — reconnect = another cold handshake.")
+p("Measured on a warmed process (after criterion warmup). True first-process cold")
+p("start is higher. No session resumption — every reconnect repeats the handshake.")
 p("")
 
 # Steady-state latency
@@ -354,6 +355,7 @@ p("")
 p("## 3. Sustained Throughput (unidirectional send)")
 p("")
 p("Client sends burst of messages, server drains in background. No echo.")
+p("Both plaintext and SecureChannel servers decode frames; overhead = crypto (AEAD seal/open) only.")
 p("")
 p("| Payload | Burst | Plaintext | SecureChannel | 95% CI | Overhead |")
 p("|---------|-------|-----------|---------------|--------|----------|")
@@ -389,7 +391,8 @@ if emb:
 p("")
 p("The handshake is a one-time cost per session (not per request). For a session")
 p("serving 1000 requests, the amortized handshake cost is <0.001% per request.")
-p("**Steady-state transport overhead is <0.1% of model inference time.**")
+steady_state_pct = emb_us / 1000 / inference_ms * 100 if emb_us else 0
+p(f"**Steady-state transport overhead is ~{steady_state_pct:.1f}% of model inference time.**")
 p("")
 
 # Notes

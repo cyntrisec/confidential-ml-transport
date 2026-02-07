@@ -417,6 +417,7 @@ dependencies = [
  "ciborium",
  "coset",
  "criterion",
+ "futures",
  "hex",
  "hkdf",
  "openssl",

@@ -1,7 +1,7 @@
 use bytes::{Bytes, BytesMut};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use tokio::runtime::Runtime;
-use tokio_util::codec::Encoder;
+use tokio_util::codec::{Encoder, FramedRead};
 
 use confidential_ml_transport::frame::codec::FrameCodec;
 use confidential_ml_transport::frame::Frame;
@@ -18,9 +18,9 @@ const PAYLOADS: &[(&str, usize)] = &[
     ("1m_large", 1_048_576),      // 1MB payload for throughput saturation
 ];
 
-/// Target ~1MB of data per iteration to amortize per-iteration overhead.
+/// Target ~4MB of data per iteration so large payloads get enough samples.
 fn burst_count(payload_size: usize) -> usize {
-    (1_048_576 / payload_size).max(1)
+    (4 * 1_048_576 / payload_size).max(1)
 }
 
 fn bench_throughput_plaintext(c: &mut Criterion) {
@@ -41,12 +41,11 @@ fn bench_throughput_plaintext(c: &mut Criterion) {
                 let client_w = rt.block_on(async {
                     let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
 
-                    // Server: drain all incoming bytes (no decode needed).
+                    // Server: decode frames (matches SecureChannel's decode cost).
                     tokio::spawn(async move {
-                        use tokio::io::AsyncReadExt;
-                        let mut server = server;
-                        let mut buf = vec![0u8; 64 * 1024];
-                        while server.read(&mut buf).await.unwrap_or(0) > 0 {}
+                        use futures::StreamExt;
+                        let mut framed = FramedRead::new(server, FrameCodec::new());
+                        while framed.next().await.is_some() {}
                     });
 
                     client
