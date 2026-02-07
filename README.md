@@ -398,6 +398,20 @@ bash scripts/bench_transport_performance.sh --quick
 cargo bench --bench reconnect
 ```
 
+## Performance (Real Nitro Enclave)
+
+Measured on m5.xlarge (Intel Xeon 8175M, 2 vCPU enclave, 2 GiB) with real Nitro attestation in **production mode** (`Flags: "NONE"`, no debug).
+
+| Phase | p50 | p95 | n |
+|-------|-----|-----|---|
+| Connect + handshake (NSM + COSE + X25519) | 5.699 ms | 5.822 ms | 50 |
+| Encrypted transport RTT (64 B echo) | 0.263 ms | 0.286 ms | 200 |
+| Inference RTT (MiniLM-L6-v2, 384-dim F32) | 98.332 ms | 99.102 ms | 50 |
+
+Transport overhead is 0.27% of inference time — encryption is not the bottleneck. No measurable performance difference between debug and production enclave modes.
+
+See `benchmark_results/nitro_enclave/` for full data including raw measurements and debug vs production comparison.
+
 ## Crypto Design
 
 | Component | Algorithm | Purpose |

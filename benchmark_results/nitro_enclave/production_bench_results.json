@@ -1,0 +1,61 @@
+{
+  "benchmark_type": "isolated_nitro_phases",
+  "crate_version": "0.1.1",
+  "test_date": "2026-02-07",
+  "enclave_mode": "PRODUCTION",
+  "instance": {
+    "type": "m5.xlarge",
+    "region": "us-east-1",
+    "cpu": "Intel Xeon Platinum 8175M @ 2.50GHz",
+    "vcpus_total": 4,
+    "vcpus_enclave": 2,
+    "memory_total_gib": 16,
+    "memory_enclave_mib": 2048,
+    "kernel": "6.1.159-182.297.amzn2023.x86_64",
+    "os": "Amazon Linux 2023",
+    "enclave_flags": "NONE"
+  },
+  "eif_measurements": {
+    "hash_algorithm": "Sha384",
+    "PCR0": "9c4a19c5e7726b1dab80c8068d46ebacd449b3a900d4402944cc5d9502d268efedc860fba625073ba444a32be5a879b1",
+    "PCR1": "4b4d5b3661b3efc12920900c80e126e4ce783c522de6c02a2a5bf7af3a2b9327b86776f188e4be1c1c404a129dbda493",
+    "PCR2": "7479d50ad59b5327e59d17454c01f4cf722695a6ace8c2e1b7cf2796c13b8597e3de85ece92b1cdc2ba008dc98fda4f1"
+  },
+  "phases": {
+    "connect_handshake": {
+      "label": "connect+handshake (VSock + Nitro attestation)",
+      "n": 50,
+      "min_ms": 5.580,
+      "max_ms": 5.957,
+      "mean_ms": 5.699,
+      "p50_ms": 5.699,
+      "p95_ms": 5.822,
+      "p99_ms": 5.957
+    },
+    "transport_rtt": {
+      "label": "transport RTT (64B echo, encrypted channel)",
+      "n": 200,
+      "min_ms": 0.251,
+      "max_ms": 0.326,
+      "mean_ms": 0.265,
+      "p50_ms": 0.263,
+      "p95_ms": 0.286,
+      "p99_ms": 0.320
+    },
+    "inference_rtt": {
+      "label": "inference RTT (MiniLM-L6-v2, 384-dim F32)",
+      "n": 50,
+      "min_ms": 97.838,
+      "max_ms": 99.244,
+      "mean_ms": 98.384,
+      "p50_ms": 98.332,
+      "p95_ms": 99.102,
+      "p99_ms": 99.244
+    }
+  },
+  "derived": {
+    "inference_only_mean_ms": 98.119,
+    "transport_overhead_per_msg_ms": 0.265,
+    "transport_overhead_pct_of_inference": 0.27
+  }
+}
