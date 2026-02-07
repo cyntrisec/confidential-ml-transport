@@ -4,3 +4,5 @@
 /fuzz/artifacts
 examples/nitro-inference/model/
 examples/nitro-inference/*.eif
+benchmark_results/*.json
+benchmark_results/*.md

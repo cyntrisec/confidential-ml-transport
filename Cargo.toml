@@ -53,6 +53,14 @@ harness = false
 name = "confidential_overhead"
 harness = false
 
+[[bench]]
+name = "handshake"
+harness = false
+
+[[bench]]
+name = "throughput"
+harness = false
+
 [[example]]
 name = "echo_server"
 required-features = ["tcp", "mock"]
