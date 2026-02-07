@@ -42,7 +42,7 @@ cargo test
 cargo test --all-features
 
 # Property tests
-cargo test --test proptest_frames
+cargo test --test frame_roundtrip
 
 # Benchmarks
 cargo bench

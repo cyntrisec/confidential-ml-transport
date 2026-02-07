@@ -2,6 +2,38 @@
 
 Attestation-bound encrypted tensor transport for confidential ML inference over VSock and TCP.
 
+## Quickstart
+
+```bash
+# Add to your project (with mock attestation for development)
+cargo add confidential-ml-transport --features mock
+```
+
+```rust
+use confidential_ml_transport::{
+    MockProvider, MockVerifier, SecureChannel, SessionConfig,
+    session::channel::Message,
+};
+use bytes::Bytes;
+
+// Server
+let listener = tokio::net::TcpListener::bind("127.0.0.1:9876").await?;
+let (stream, _) = listener.accept().await?;
+let mut server = SecureChannel::accept_with_attestation(
+    stream, &MockProvider::new(), SessionConfig::default(),
+).await?;
+
+// Client
+let stream = tokio::net::TcpStream::connect("127.0.0.1:9876").await?;
+let mut client = SecureChannel::connect_with_attestation(
+    stream, &MockVerifier::new(), SessionConfig::default(),
+).await?;
+
+client.send(Bytes::from("hello")).await?;
+```
+
+> **Note:** `MockProvider`/`MockVerifier` perform no real attestation and are for **testing and development only**. For production, use `NitroProvider`/`NitroVerifier` (feature `nitro`) or implement the `AttestationProvider`/`AttestationVerifier` traits for your TEE platform.
+
 ## Overview
 
 `confidential-ml-transport` is a Rust library that provides secure, binary-framed communication between TEE (Trusted Execution Environment) enclaves and clients. It combines a compact wire protocol with X25519+ChaCha20Poly1305 encryption and a 3-message attested handshake, designed for streaming tensor data in confidential AI inference pipelines.
@@ -74,6 +106,10 @@ Session keys are derived via HKDF-SHA256 from the X25519 shared secret, salted w
 ## Usage
 
 ### Basic encrypted echo (TCP + mock attestation)
+
+> **Requires feature `mock`:** `cargo add confidential-ml-transport --features mock`
+>
+> `MockProvider`/`MockVerifier` skip real attestation and are for **testing only**. For production, use `NitroProvider`/`NitroVerifier` or implement your own `AttestationProvider`/`AttestationVerifier`.
 
 ```rust
 use bytes::Bytes;
@@ -222,16 +258,15 @@ tokio::spawn(run_client_proxy(client_config, Arc::new(verifier)));
 ```rust
 use confidential_ml_transport::{TensorRef, DType};
 
-let activations = vec![0f32; 128 * 768];
-let data = unsafe {
-    std::slice::from_raw_parts(activations.as_ptr() as *const u8, activations.len() * 4)
-};
+let activations: Vec<f32> = vec![0.0; 128 * 768];
+// Safe conversion: collect f32s into a byte vec via to_ne_bytes
+let data: Vec<u8> = activations.iter().flat_map(|f| f.to_ne_bytes()).collect();
 
 let tensor = TensorRef {
     name: "hidden_state",
     dtype: DType::F32,
     shape: &[128, 768],
-    data,
+    data: &data,
 };
 
 channel.send_tensor(tensor).await?;
