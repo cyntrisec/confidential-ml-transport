@@ -58,6 +58,25 @@ jobs:
           fetch-depth: 2
       - run: bash scripts/check_bench_tables.sh HEAD~1
 
+  fuzz-smoke:
+    name: Fuzz Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - run: cargo install cargo-fuzz
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo +nightly fuzz build
+      - name: Smoke fuzz (30s per target)
+        run: |
+          for target in fuzz_frame_decode fuzz_tensor_decode fuzz_handshake_resp fuzz_aead_open; do
+            echo "=== $target ==="
+            cargo +nightly fuzz run "$target" "fuzz/seed_corpus/$target" -- -max_total_time=30 -runs=0
+          done
+
   doc:
     name: Documentation
     runs-on: ubuntu-latest
