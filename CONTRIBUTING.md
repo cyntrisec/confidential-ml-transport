@@ -47,8 +47,8 @@ cargo test --test frame_roundtrip
 # Benchmarks
 cargo bench
 
-# Fuzz testing
-cd fuzz && cargo +nightly fuzz run fuzz_frame_decode
+# Fuzz testing (4 targets: frame_decode, tensor_decode, handshake_resp, aead_open)
+cargo +nightly fuzz run fuzz_frame_decode fuzz/seed_corpus/fuzz_frame_decode
 ```
 
 ## Pull Request Guidelines
