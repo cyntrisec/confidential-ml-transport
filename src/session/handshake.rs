@@ -113,9 +113,9 @@ fn parse_responder_hello(
             "attestation document too large: {doc_len} bytes (max {MAX_ATTESTATION_DOC_SIZE})"
         )));
     }
-    let expected_total = MIN_LEN.checked_add(doc_len).ok_or_else(|| {
-        SessionError::HandshakeFailed("responder hello length overflow".into())
-    })?;
+    let expected_total = MIN_LEN
+        .checked_add(doc_len)
+        .ok_or_else(|| SessionError::HandshakeFailed("responder hello length overflow".into()))?;
     if payload.len() != expected_total {
         return Err(SessionError::HandshakeFailed(format!(
             "responder hello: expected {expected_total} bytes, got {}",

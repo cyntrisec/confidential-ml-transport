@@ -155,9 +155,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         extra_flags: u8,
     ) -> Result<Frame, Error> {
         let flags_byte = Flags::ENCRYPTED | extra_flags;
-        let (ciphertext, seq) =
-            self.sealer
-                .seal(plaintext, msg_type as u8, flags_byte)?;
+        let (ciphertext, seq) = self.sealer.seal(plaintext, msg_type as u8, flags_byte)?;
         if seq > u32::MAX as u64 {
             return Err(crate::error::CryptoError::NonceOverflow.into());
         }

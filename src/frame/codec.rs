@@ -167,7 +167,21 @@ mod tests {
         let mut codec = FrameCodec::new();
         // Header with payload_len = 0xFFFFFFFF (version = PROTOCOL_VERSION)
         let mut buf = BytesMut::from(
-            &[0xCF, 0x4D, PROTOCOL_VERSION, 0x02, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF][..],
+            &[
+                0xCF,
+                0x4D,
+                PROTOCOL_VERSION,
+                0x02,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0xFF,
+                0xFF,
+                0xFF,
+                0xFF,
+            ][..],
         );
         let err = codec.decode(&mut buf).unwrap_err();
         assert!(matches!(err, FrameError::PayloadTooLarge { .. }));
