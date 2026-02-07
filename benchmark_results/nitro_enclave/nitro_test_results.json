@@ -1,0 +1,60 @@
+{
+  "test_date": "2026-02-07",
+  "crate_version": "0.1.1",
+  "attestation_type": "real_nitro",
+  "instance": {
+    "type": "m5.xlarge",
+    "region": "us-east-1",
+    "cpu": "Intel Xeon Platinum 8175M @ 2.50GHz",
+    "vcpus_total": 4,
+    "vcpus_enclave": 2,
+    "memory_total_gib": 16,
+    "memory_enclave_mib": 2048,
+    "kernel": "6.1.159-182.297.amzn2023.x86_64",
+    "os": "Amazon Linux 2023",
+    "rust_version": "1.93.0",
+    "nitro_cli_version": "1.4.4"
+  },
+  "enclave": {
+    "eif_measurements": {
+      "hash_algorithm": "Sha384",
+      "PCR0": "f5ee1e0e52547b31e533c3bc5a6091d8235e006f8dc85badccb9eeecff5ebb4fcbf1c21a67dfcf99268863602d598d9a",
+      "PCR1": "4b4d5b3661b3efc12920900c80e126e4ce783c522de6c02a2a5bf7af3a2b9327b86776f188e4be1c1c404a129dbda493",
+      "PCR2": "91ee3f436aa1fc381777ed015bdfb964b4bd70ae8ec6add9e8ab92a4667b96e680b34a34244aeb983bc694f4cb265cc6"
+    },
+    "attestation_document_hash": "40235006940aab2f5d89d9afee362e15d41b3149e63fdfd4c367bc7421c16d5c",
+    "measurement_count": 16,
+    "debug_mode": true
+  },
+  "model": {
+    "name": "all-MiniLM-L6-v2",
+    "params": "22.7M",
+    "embedding_dims": 384,
+    "output_dtype": "F32",
+    "output_bytes_per_embedding": 1536
+  },
+  "benchmarks": {
+    "sequential_requests": {
+      "description": "10 sequential requests, each includes fresh VSock connection + Nitro handshake + attestation + inference",
+      "results_ms": [104, 94, 92, 92, 92, 91, 92, 92, 92, 91],
+      "p50_ms": 92,
+      "p95_ms": 104,
+      "mean_ms": 93.2,
+      "min_ms": 91,
+      "max_ms": 104,
+      "note": "First request ~12ms slower (cold start / allocations)"
+    },
+    "burst_5_texts": {
+      "description": "5 texts in single connection (1 handshake + 5 inferences)",
+      "total_ms": 415,
+      "per_inference_ms": 83.0,
+      "handshake_overhead_ms": "~10ms (estimated from total - 5 * per_inference)"
+    }
+  },
+  "protocol": {
+    "cipher_suite": "X25519 + HKDF-SHA256 + ChaCha20-Poly1305",
+    "transport": "VSock",
+    "frame_version": 2,
+    "aad_binding": "version || msg_type || flags || session_id || sequence"
+  }
+}

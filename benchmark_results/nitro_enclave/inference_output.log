@@ -1,0 +1,25 @@
+2026-02-07T20:55:20.313361Z INFO host_client: connecting to vsock cid=16 port=5555 (vsock-nitro)
+2026-02-07T20:55:20.321360Z INFO confidential_ml_transport::session::handshake: attestation verification succeeded document_hash="40235006940aab2f5d89d9afee362e15d41b3149e63fdfd4c367bc7421c16d5c" measurement_count=16
+2026-02-07T20:55:20.321550Z INFO host_client: handshake complete
+Input: "Hello world"
+  Tensor: name="embedding"
+  Shape:  [1, 384]
+  DType:  F32
+  Values: [-0.034477, 0.031023, 0.006735, 0.026109, -0.039362, ... 0.033232, 0.023792, -0.022890, 0.038938, 0.030207]
+  Dims:   384
+
+Input: "Confidential computing is the future"
+  Tensor: name="embedding"
+  Shape:  [1, 384]
+  DType:  F32
+  Values: [-0.141451, 0.062083, -0.014753, 0.003615, 0.022185, ... 0.076853, 0.061025, -0.021450, 0.014789, -0.044108]
+  Dims:   384
+
+Input: "AWS Nitro Enclaves provide hardware-based isolation"
+  Tensor: name="embedding"
+  Shape:  [1, 384]
+  DType:  F32
+  Values: [-0.079873, 0.015966, -0.017343, -0.008924, 0.040220, ... 0.107882, 0.081366, -0.040462, -0.027534, 0.023259]
+  Dims:   384
+
+2026-02-07T20:55:20.570113Z INFO host_client: done
