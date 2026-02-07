@@ -381,12 +381,13 @@ Headline numbers (see [`benchmark_results/BENCHMARK_BRIEF.md`](benchmark_results
 
 | Metric | Value | Environment |
 |--------|-------|-------------|
-| Handshake (3-msg, mock attestation) | **139–249 µs** p50 | AWS / Azure / local |
-| Steady-state RTT (1536 B embedding) | **29 µs** | Local (established session) |
-| Reconnect amortization | **9.7x** (282 µs → 29 µs) | Local |
-| Throughput (4 KB, secure) | **501–751 MB/s** | Local / AWS |
+| Handshake (3-msg, mock attestation) | **139 µs** p50 | AWS m6i.xlarge |
+| Steady-state RTT (1536 B embedding) | **33 µs** p50 | AWS (established session) |
+| Throughput (4 KB, secure) | **482–751 MB/s** | Local / AWS |
 | Frame codec roundtrip (4 KB) | **320 ns** (12 GiB/s) | Local |
 | ChaCha20-Poly1305 seal (4 KB) | **6.2 µs** (630 MB/s) | Local |
+
+Cross-environment handshake p50: 139 µs (AWS), 168 µs (Azure SEV-SNP), 198 µs (local dev). See BENCHMARK_BRIEF for full comparison.
 
 ```bash
 # Run all benchmarks

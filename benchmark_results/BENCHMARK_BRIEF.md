@@ -32,7 +32,7 @@ Real attestation (Nitro/SEV-SNP) adds ~1-5 ms to the handshake.
 | Steady-state RTT (established session) | 29 µs | 9.7x faster |
 | Teardown + reconnect | 465 µs | 1.6x slower |
 
-After the initial handshake, ongoing requests pay only AEAD seal/open cost (~29 µs RTT for a 1536-byte embedding).
+After the initial handshake, ongoing requests pay only AEAD seal/open cost (~29 µs local reconnect benchmark, ~33 µs AWS AEAD benchmark for a 1536-byte embedding).
 
 ### Steady-State AEAD Latency (send/recv round-trip, established session)
 
