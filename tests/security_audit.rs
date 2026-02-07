@@ -616,6 +616,38 @@ async fn session_id_domain_separation_consistent() {
 }
 
 // ---------------------------------------------------------------------------
+// Fix #16: Constant-time confirmation hash comparison
+// ---------------------------------------------------------------------------
+
+/// Verify that the handshake source code uses constant-time comparison
+/// (`ct_eq`) for the confirmation hash, not `!=` or `==`.
+/// This prevents timing side-channel attacks where an attacker could learn
+/// correct hash bytes incrementally by measuring response latency.
+#[test]
+fn confirmation_hash_uses_constant_time_comparison() {
+    let source = std::fs::read_to_string(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/session/handshake.rs")
+    ).expect("should read handshake.rs");
+
+    // The confirmation check must use ct_eq (from subtle crate).
+    assert!(
+        source.contains("ct_eq"),
+        "handshake.rs must use constant-time comparison (ct_eq) for confirmation hash"
+    );
+    assert!(
+        source.contains("use subtle::ConstantTimeEq"),
+        "handshake.rs must import subtle::ConstantTimeEq"
+    );
+
+    // Ensure we don't also have a non-constant-time comparison on the hashes.
+    // Look for the pattern: received_hash != expected_hash (the old vulnerable code).
+    assert!(
+        !source.contains("received_hash != expected_hash"),
+        "handshake.rs must NOT use non-constant-time != for confirmation hash comparison"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Fix #1: Key zeroization (compile-time structural test)
 // ---------------------------------------------------------------------------
 

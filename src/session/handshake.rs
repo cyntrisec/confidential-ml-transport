@@ -2,6 +2,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use hkdf::Hkdf;
 use rand::Rng;
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -402,7 +403,10 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     // The initiator's (send_key, recv_key) == our (recv_key, send_key).
     let expected_hash = compute_confirmation(&session_id, &recv_key, &send_key);
 
-    if received_hash != expected_hash {
+    // Constant-time comparison to prevent timing side-channel attacks on the
+    // confirmation hash. A variable-time `!=` would let an attacker learn
+    // correct bytes incrementally by measuring response latency.
+    if received_hash.ct_eq(&expected_hash).unwrap_u8() == 0 {
         return Err(SessionError::HandshakeFailed(
             "confirmation hash mismatch: peer derived different keys".into(),
         )
