@@ -1,4 +1,4 @@
-#![cfg(feature = "mock")]
+#![cfg(all(feature = "mock", feature = "tcp"))]
 //! End-to-end integration test for the transparent proxy.
 //!
 //! Test flow:
