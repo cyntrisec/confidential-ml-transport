@@ -8,9 +8,7 @@ async fn listen_and_accept() {
     let listener = tcp::listen("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    let client_handle = tokio::spawn(async move {
-        tcp::connect(addr).await.unwrap()
-    });
+    let client_handle = tokio::spawn(async move { tcp::connect(addr).await.unwrap() });
 
     let (server_stream, peer_addr) = tcp::accept(&listener).await.unwrap();
     let client_stream = client_handle.await.unwrap();

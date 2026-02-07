@@ -625,9 +625,11 @@ async fn session_id_domain_separation_consistent() {
 /// correct hash bytes incrementally by measuring response latency.
 #[test]
 fn confirmation_hash_uses_constant_time_comparison() {
-    let source = std::fs::read_to_string(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/src/session/handshake.rs")
-    ).expect("should read handshake.rs");
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/session/handshake.rs"
+    ))
+    .expect("should read handshake.rs");
 
     // The confirmation check must use ct_eq (from subtle crate).
     assert!(
