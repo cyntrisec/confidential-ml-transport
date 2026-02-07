@@ -154,7 +154,10 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         plaintext: &[u8],
         extra_flags: u8,
     ) -> Result<Frame, Error> {
-        let (ciphertext, seq) = self.sealer.seal(plaintext)?;
+        let flags_byte = Flags::ENCRYPTED | extra_flags;
+        let (ciphertext, seq) =
+            self.sealer
+                .seal(plaintext, msg_type as u8, flags_byte)?;
         if seq > u32::MAX as u64 {
             return Err(crate::error::CryptoError::NonceOverflow.into());
         }
@@ -162,7 +165,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             header: FrameHeader {
                 version: PROTOCOL_VERSION,
                 msg_type,
-                flags: Flags(Flags::ENCRYPTED | extra_flags),
+                flags: Flags(flags_byte),
                 sequence: seq as u32,
                 payload_len: ciphertext.len() as u32,
             },
@@ -201,9 +204,12 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
                 if !frame.header.flags.is_encrypted() {
                     return Err(SessionError::UnencryptedFrame.into());
                 }
-                let plaintext = self
-                    .opener
-                    .open(&frame.payload, frame.header.sequence as u64)?;
+                let plaintext = self.opener.open(
+                    &frame.payload,
+                    frame.header.sequence as u64,
+                    frame.header.msg_type as u8,
+                    frame.header.flags.raw(),
+                )?;
 
                 match frame.header.msg_type {
                     FrameType::Data => Ok(Message::Data(Bytes::from(plaintext))),

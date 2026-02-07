@@ -5,10 +5,21 @@ use zeroize::Zeroize;
 use super::SymmetricKey;
 use crate::error::CryptoError;
 
-/// Builds per-message AAD: `version || session_id || sequence`.
-fn build_aad(version: u8, session_id: &[u8; 32], sequence: u64) -> Vec<u8> {
-    let mut aad = Vec::with_capacity(1 + 32 + 8);
+/// Builds per-message AAD: `version || msg_type || flags || session_id || sequence`.
+///
+/// Including `msg_type` and `flags` prevents an active attacker from flipping the
+/// frame type in the unencrypted header without breaking AEAD verification.
+fn build_aad(
+    version: u8,
+    msg_type: u8,
+    flags: u8,
+    session_id: &[u8; 32],
+    sequence: u64,
+) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(1 + 1 + 1 + 32 + 8);
     aad.push(version);
+    aad.push(msg_type);
+    aad.push(flags);
     aad.extend_from_slice(session_id);
     aad.extend_from_slice(&sequence.to_be_bytes());
     aad
@@ -49,12 +60,26 @@ impl SealingContext {
 
     /// Encrypt a plaintext payload. Returns ciphertext (includes AEAD tag)
     /// and the sequence number used (for the frame header).
-    pub fn seal(&mut self, plaintext: &[u8]) -> Result<(Vec<u8>, u64), CryptoError> {
+    ///
+    /// `msg_type` and `flags` are bound into the AEAD associated data so that
+    /// an attacker cannot flip the frame type without breaking authentication.
+    pub fn seal(
+        &mut self,
+        plaintext: &[u8],
+        msg_type: u8,
+        flags: u8,
+    ) -> Result<(Vec<u8>, u64), CryptoError> {
         let seq = self.sequence;
         self.sequence = seq.checked_add(1).ok_or(CryptoError::NonceOverflow)?;
 
         let nonce = build_nonce(seq);
-        let aad = build_aad(crate::frame::PROTOCOL_VERSION, &self.session_id, seq);
+        let aad = build_aad(
+            crate::frame::PROTOCOL_VERSION,
+            msg_type,
+            flags,
+            &self.session_id,
+            seq,
+        );
 
         let ciphertext = self
             .cipher
@@ -102,7 +127,17 @@ impl OpeningContext {
     }
 
     /// Decrypt a ciphertext payload. Enforces monotonic sequence numbers.
-    pub fn open(&mut self, ciphertext: &[u8], sequence: u64) -> Result<Vec<u8>, CryptoError> {
+    ///
+    /// `msg_type` and `flags` must match the values used during encryption;
+    /// any mismatch (e.g., attacker flipping the frame type) will cause AEAD
+    /// decryption to fail.
+    pub fn open(
+        &mut self,
+        ciphertext: &[u8],
+        sequence: u64,
+        msg_type: u8,
+        flags: u8,
+    ) -> Result<Vec<u8>, CryptoError> {
         // Monotonic sequence enforcement.
         if let Some(last) = self.last_sequence {
             if sequence <= last {
@@ -114,7 +149,13 @@ impl OpeningContext {
         }
 
         let nonce = build_nonce(sequence);
-        let aad = build_aad(crate::frame::PROTOCOL_VERSION, &self.session_id, sequence);
+        let aad = build_aad(
+            crate::frame::PROTOCOL_VERSION,
+            msg_type,
+            flags,
+            &self.session_id,
+            sequence,
+        );
 
         let plaintext = self
             .cipher
@@ -153,9 +194,11 @@ mod tests {
         let mut opener = OpeningContext::new(&key, sid);
 
         let plaintext = b"hello confidential world";
-        let (ciphertext, seq) = sealer.seal(plaintext).unwrap();
+        let msg_type = 0x02; // Data
+        let flags = 0x01; // Encrypted
+        let (ciphertext, seq) = sealer.seal(plaintext, msg_type, flags).unwrap();
 
-        let recovered = opener.open(&ciphertext, seq).unwrap();
+        let recovered = opener.open(&ciphertext, seq, msg_type, flags).unwrap();
         assert_eq!(&recovered, plaintext);
     }
 
@@ -167,10 +210,12 @@ mod tests {
         let mut sealer = SealingContext::new(&key, sid);
         let mut opener = OpeningContext::new(&key, sid);
 
-        let (mut ciphertext, seq) = sealer.seal(b"secret").unwrap();
+        let msg_type = 0x02;
+        let flags = 0x01;
+        let (mut ciphertext, seq) = sealer.seal(b"secret", msg_type, flags).unwrap();
         ciphertext[0] ^= 0xFF;
 
-        let result = opener.open(&ciphertext, seq);
+        let result = opener.open(&ciphertext, seq, msg_type, flags);
         assert!(matches!(result, Err(CryptoError::OpenFailed)));
     }
 
@@ -182,9 +227,11 @@ mod tests {
         let mut sealer = SealingContext::new(&key, sid);
         let mut opener = OpeningContext::new(&key, sid);
 
-        let (ciphertext, _seq) = sealer.seal(b"secret").unwrap();
+        let msg_type = 0x02;
+        let flags = 0x01;
+        let (ciphertext, _seq) = sealer.seal(b"secret", msg_type, flags).unwrap();
 
-        let result = opener.open(&ciphertext, 999);
+        let result = opener.open(&ciphertext, 999, msg_type, flags);
         assert!(matches!(result, Err(CryptoError::OpenFailed)));
     }
 
@@ -196,13 +243,15 @@ mod tests {
         let mut sealer = SealingContext::new(&key, sid);
         let mut opener = OpeningContext::new(&key, sid);
 
-        let (ct0, seq0) = sealer.seal(b"first").unwrap();
-        let (ct1, seq1) = sealer.seal(b"second").unwrap();
+        let msg_type = 0x02;
+        let flags = 0x01;
+        let (ct0, seq0) = sealer.seal(b"first", msg_type, flags).unwrap();
+        let (ct1, seq1) = sealer.seal(b"second", msg_type, flags).unwrap();
 
-        opener.open(&ct0, seq0).unwrap();
-        opener.open(&ct1, seq1).unwrap();
+        opener.open(&ct0, seq0, msg_type, flags).unwrap();
+        opener.open(&ct1, seq1, msg_type, flags).unwrap();
 
-        let result = opener.open(&ct0, seq0);
+        let result = opener.open(&ct0, seq0, msg_type, flags);
         assert!(matches!(result, Err(CryptoError::SequenceReplay { .. })));
     }
 
@@ -213,11 +262,41 @@ mod tests {
         let mut sealer = SealingContext::new(&key, sid);
 
         assert_eq!(sealer.sequence(), 0);
-        let (_, seq) = sealer.seal(b"a").unwrap();
+        let (_, seq) = sealer.seal(b"a", 0x02, 0x01).unwrap();
         assert_eq!(seq, 0);
         assert_eq!(sealer.sequence(), 1);
-        let (_, seq) = sealer.seal(b"b").unwrap();
+        let (_, seq) = sealer.seal(b"b", 0x02, 0x01).unwrap();
         assert_eq!(seq, 1);
         assert_eq!(sealer.sequence(), 2);
+    }
+
+    #[test]
+    fn wrong_msg_type_fails() {
+        let key = test_key();
+        let sid = test_session_id();
+
+        let mut sealer = SealingContext::new(&key, sid);
+        let mut opener = OpeningContext::new(&key, sid);
+
+        let (ciphertext, seq) = sealer.seal(b"secret", 0x02, 0x01).unwrap();
+
+        // Attempt to open with a different msg_type (type-confusion attack).
+        let result = opener.open(&ciphertext, seq, 0x06, 0x01);
+        assert!(matches!(result, Err(CryptoError::OpenFailed)));
+    }
+
+    #[test]
+    fn wrong_flags_fails() {
+        let key = test_key();
+        let sid = test_session_id();
+
+        let mut sealer = SealingContext::new(&key, sid);
+        let mut opener = OpeningContext::new(&key, sid);
+
+        let (ciphertext, seq) = sealer.seal(b"secret", 0x02, 0x01).unwrap();
+
+        // Attempt to open with different flags (flag-flip attack).
+        let result = opener.open(&ciphertext, seq, 0x02, 0x03);
+        assert!(matches!(result, Err(CryptoError::OpenFailed)));
     }
 }

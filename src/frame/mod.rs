@@ -9,7 +9,13 @@ use crate::error::FrameError;
 pub const MAGIC: u16 = 0xCF4D;
 
 /// Current protocol version.
-pub const PROTOCOL_VERSION: u8 = 1;
+///
+/// Version history:
+/// - v1: AAD = `version || session_id || sequence`
+/// - v2: AAD = `version || msg_type || flags || session_id || sequence`
+///   (fixes type-confusion attack where an active attacker could flip msg_type
+///   in the unencrypted header without breaking AEAD verification)
+pub const PROTOCOL_VERSION: u8 = 2;
 
 /// Fixed header size in bytes.
 pub const HEADER_SIZE: usize = 13;

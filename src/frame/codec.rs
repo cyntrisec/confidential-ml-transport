@@ -90,6 +90,7 @@ impl Encoder<Frame> for FrameCodec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame::PROTOCOL_VERSION;
     use bytes::Bytes;
 
     #[test]
@@ -164,9 +165,10 @@ mod tests {
     #[test]
     fn payload_too_large() {
         let mut codec = FrameCodec::new();
-        // Header with payload_len = 0xFFFFFFFF
-        let mut buf =
-            BytesMut::from(&[0xCF, 0x4D, 1, 0x02, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF][..]);
+        // Header with payload_len = 0xFFFFFFFF (version = PROTOCOL_VERSION)
+        let mut buf = BytesMut::from(
+            &[0xCF, 0x4D, PROTOCOL_VERSION, 0x02, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF][..],
+        );
         let err = codec.decode(&mut buf).unwrap_err();
         assert!(matches!(err, FrameError::PayloadTooLarge { .. }));
     }

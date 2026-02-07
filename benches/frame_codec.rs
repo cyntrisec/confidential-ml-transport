@@ -105,10 +105,13 @@ fn bench_seal_open(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto");
     group.throughput(Throughput::Bytes(4096));
 
+    let msg_type = 0x02u8; // Data
+    let flags = 0x01u8; // Encrypted
+
     group.bench_function("seal_4k", |b| {
         let mut sealer = SealingContext::new(&key, session_id);
         b.iter(|| {
-            let (ct, _) = sealer.seal(&plaintext).unwrap();
+            let (ct, _) = sealer.seal(&plaintext, msg_type, flags).unwrap();
             black_box(ct);
         })
     });
@@ -117,7 +120,7 @@ fn bench_seal_open(c: &mut Criterion) {
         // Pre-seal messages to decrypt.
         let mut sealer = SealingContext::new(&key, session_id);
         let messages: Vec<(Vec<u8>, u64)> = (0..10000)
-            .map(|_| sealer.seal(&plaintext).unwrap())
+            .map(|_| sealer.seal(&plaintext, msg_type, flags).unwrap())
             .collect();
         let mut opener = OpeningContext::new(&key, session_id);
         let mut idx = 0;
@@ -127,7 +130,7 @@ fn bench_seal_open(c: &mut Criterion) {
                 return;
             }
             let (ct, seq) = &messages[idx];
-            let pt = opener.open(ct, *seq).unwrap();
+            let pt = opener.open(ct, *seq, msg_type, flags).unwrap();
             black_box(pt);
             idx += 1;
         })

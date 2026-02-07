@@ -382,6 +382,11 @@ fn get_pcrs_field(map: &[(Value, Value)]) -> Result<BTreeMap<usize, Vec<u8>>, At
                 )))
             }
         };
+        if result.contains_key(&idx) {
+            return Err(AttestError::VerificationFailed(format!(
+                "duplicate PCR index {idx}"
+            )));
+        }
         result.insert(idx, bytes);
     }
 
@@ -408,7 +413,10 @@ fn validate_cert_chain(
         AttestError::VerificationFailed(format!("failed to encode pinned root cert: {e}"))
     })?;
 
-    if bundle_root.to_der().unwrap_or_default() != pinned_der {
+    let bundle_root_der = bundle_root.to_der().map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to encode cabundle root cert: {e}"))
+    })?;
+    if bundle_root_der != pinned_der {
         return Err(AttestError::VerificationFailed(
             "cabundle root does not match pinned AWS Nitro root CA".into(),
         ));

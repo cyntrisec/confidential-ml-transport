@@ -1,3 +1,4 @@
+#![cfg(feature = "mock")]
 //! Tests for retry policy, measurement verification, and connect_with_retry.
 
 use std::collections::BTreeMap;

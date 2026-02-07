@@ -33,7 +33,7 @@ aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
 serde_bytes = { version = "0.11", optional = true }
 
 [features]
-default = ["mock", "tcp"]
+default = ["tcp"]
 mock = []
 tcp = []
 vsock = ["dep:tokio-vsock"]

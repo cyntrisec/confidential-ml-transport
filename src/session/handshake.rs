@@ -81,6 +81,12 @@ fn parse_initiator_hello(payload: &[u8]) -> Result<([u8; 32], [u8; 32]), Session
     Ok((pk, nonce))
 }
 
+/// Maximum attestation document size accepted during handshake (64 KiB).
+///
+/// Real Nitro attestation documents are typically <16 KiB. This cap prevents an
+/// adversary from sending a multi-megabyte document to exhaust memory.
+const MAX_ATTESTATION_DOC_SIZE: usize = 64 * 1024;
+
 fn parse_responder_hello(
     payload: &[u8],
 ) -> Result<([u8; 32], [u8; 32], AttestationDocument), SessionError> {
@@ -102,7 +108,14 @@ fn parse_responder_hello(
     nonce.copy_from_slice(&payload[33..65]);
     let mut cursor = &payload[65..];
     let doc_len = cursor.get_u32() as usize;
-    let expected_total = MIN_LEN + doc_len;
+    if doc_len > MAX_ATTESTATION_DOC_SIZE {
+        return Err(SessionError::HandshakeFailed(format!(
+            "attestation document too large: {doc_len} bytes (max {MAX_ATTESTATION_DOC_SIZE})"
+        )));
+    }
+    let expected_total = MIN_LEN.checked_add(doc_len).ok_or_else(|| {
+        SessionError::HandshakeFailed("responder hello length overflow".into())
+    })?;
     if payload.len() != expected_total {
         return Err(SessionError::HandshakeFailed(format!(
             "responder hello: expected {expected_total} bytes, got {}",

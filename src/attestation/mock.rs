@@ -9,6 +9,12 @@ use crate::error::AttestError;
 
 /// Mock attestation provider for testing. Produces a simple document
 /// containing the concatenation of user_data, nonce, and public_key.
+///
+/// # Security Warning
+///
+/// This provider performs **zero cryptographic verification** and must
+/// never be used in production. Enable it only via `features = ["mock"]`
+/// for development and testing.
 pub struct MockProvider;
 
 impl MockProvider {

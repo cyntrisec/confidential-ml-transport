@@ -1,3 +1,4 @@
+#![cfg(feature = "mock")]
 //! Tests for the 15 security audit fixes.
 //!
 //! Each test is annotated with the audit finding number it validates.

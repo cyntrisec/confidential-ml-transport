@@ -1,3 +1,4 @@
+#![cfg(feature = "mock")]
 //! End-to-end integration test for the transparent proxy.
 //!
 //! Test flow:
