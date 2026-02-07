@@ -9,7 +9,7 @@ rust-version = "1.75"
 description = "Attestation-bound encrypted tensor transport for confidential ML inference"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cyntrisec/confidential-ml-transport"
-keywords = ["tee", "confidential-computing", "ml", "vsock", "encryption"]
+keywords = ["tee", "confidential", "ml", "vsock", "encryption"]
 categories = ["cryptography", "network-programming"]
 exclude = ["examples/nitro-inference/", "fuzz/", "benchmark_results/", "scripts/", ".target_codex/"]
 
