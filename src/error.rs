@@ -2,6 +2,7 @@ use std::io;
 
 /// Errors from frame parsing and encoding.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum FrameError {
     #[error("invalid magic bytes: expected 0xCF4D, got 0x{0:04X}")]
     InvalidMagic(u16),
@@ -39,6 +40,7 @@ pub enum FrameError {
 
 /// Errors from cryptographic operations.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CryptoError {
     #[error("HKDF expand failed: invalid length")]
     HkdfExpandFailed,
@@ -64,6 +66,7 @@ pub enum CryptoError {
 
 /// Errors from attestation operations.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AttestError {
     #[error("attestation generation failed: {0}")]
     GenerationFailed(String),
@@ -83,6 +86,7 @@ pub enum AttestError {
 
 /// Errors from session establishment and communication.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum SessionError {
     #[error("handshake failed: {0}")]
     HandshakeFailed(String),
@@ -111,6 +115,7 @@ pub enum SessionError {
 
 /// Top-level error type for the crate.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Frame(#[from] FrameError),
