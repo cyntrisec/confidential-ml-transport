@@ -5,16 +5,33 @@ use super::{Frame, FrameHeader, HEADER_SIZE};
 use crate::error::FrameError;
 
 /// Tokio codec for encoding/decoding frames on the wire.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FrameCodec {
     /// Cached header from a partial decode.
     current_header: Option<FrameHeader>,
+    /// Configured maximum payload size (enforced on decode).
+    max_payload_size: u32,
+}
+
+impl Default for FrameCodec {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FrameCodec {
     pub fn new() -> Self {
         Self {
             current_header: None,
+            max_payload_size: super::MAX_PAYLOAD_SIZE,
+        }
+    }
+
+    /// Create a codec with a custom maximum payload size.
+    pub fn with_max_payload_size(max_payload_size: u32) -> Self {
+        Self {
+            current_header: None,
+            max_payload_size,
         }
     }
 }
@@ -32,6 +49,15 @@ impl Decoder for FrameCodec {
                 None => return Ok(None),
             },
         };
+
+        // Enforce configured payload size limit (may be stricter than the
+        // hard cap already checked in FrameHeader::decode).
+        if header.payload_len > self.max_payload_size {
+            return Err(FrameError::PayloadTooLarge {
+                size: header.payload_len,
+                max: self.max_payload_size,
+            });
+        }
 
         // Wait for full payload.
         let payload_len = header.payload_len as usize;

@@ -9,16 +9,14 @@ use crate::crypto::seal::{OpeningContext, SealingContext};
 use crate::error::{Error, SessionError};
 use crate::frame::codec::FrameCodec;
 use crate::frame::tensor::{OwnedTensor, TensorRef};
-use crate::frame::{
-    Flags, Frame, FrameHeader, FrameType, HEADER_SIZE, MAX_PAYLOAD_SIZE, PROTOCOL_VERSION,
-};
+use crate::frame::{Flags, Frame, FrameHeader, FrameType, HEADER_SIZE, PROTOCOL_VERSION};
 
 use super::handshake;
 use super::retry;
 use super::SessionConfig;
 
-/// Maximum read buffer size: header + max payload + margin for in-flight data.
-const MAX_READ_BUF_SIZE: usize = MAX_PAYLOAD_SIZE as usize + HEADER_SIZE + 4096;
+/// Margin added to max_payload_size for the read buffer bound.
+const READ_BUF_MARGIN: usize = HEADER_SIZE + 4096;
 
 /// A high-level message received from a secure channel.
 #[derive(Debug)]
@@ -85,7 +83,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             sealer,
             opener,
             read_buf: result.residual,
-            codec: FrameCodec::new(),
+            codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
         })
     }
@@ -143,7 +141,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             sealer,
             opener,
             read_buf: result.residual,
-            codec: FrameCodec::new(),
+            codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
         })
     }
@@ -157,6 +155,9 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         extra_flags: u8,
     ) -> Result<Frame, Error> {
         let (ciphertext, seq) = self.sealer.seal(plaintext)?;
+        if seq > u32::MAX as u64 {
+            return Err(crate::error::CryptoError::NonceOverflow.into());
+        }
         Ok(Frame {
             header: FrameHeader {
                 version: PROTOCOL_VERSION,
@@ -252,7 +253,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
                 return Ok(frame);
             }
             // Enforce read buffer bounds before reading more data.
-            if self.read_buf.len() > MAX_READ_BUF_SIZE {
+            let max_read_buf = self.config.max_payload_size as usize + READ_BUF_MARGIN;
+            if self.read_buf.len() > max_read_buf {
                 return Err(SessionError::ReadBufferOverflow {
                     size: self.read_buf.len(),
                 }

@@ -206,7 +206,7 @@ impl AttestationVerifier for NitroVerifier {
         // Build VerifiedAttestation.
         let document_hash: [u8; 32] = Sha256::digest(&doc.raw).into();
 
-        let measurements: Vec<Vec<u8>> = att_doc.pcrs.into_values().collect();
+        let measurements = att_doc.pcrs;
 
         Ok(VerifiedAttestation {
             document_hash,
@@ -813,9 +813,9 @@ mod tests {
         assert_eq!(verified.nonce.as_deref(), Some(nonce.as_ref()));
         assert_eq!(verified.user_data.as_deref(), Some(user_data.as_ref()));
         assert_eq!(verified.measurements.len(), 3);
-        assert_eq!(verified.measurements[0], vec![0xAA; 48]);
-        assert_eq!(verified.measurements[1], vec![0xBB; 48]);
-        assert_eq!(verified.measurements[2], vec![0xCC; 48]);
+        assert_eq!(verified.measurements[&0], vec![0xAA; 48]);
+        assert_eq!(verified.measurements[&1], vec![0xBB; 48]);
+        assert_eq!(verified.measurements[&2], vec![0xCC; 48]);
     }
 
     #[tokio::test]

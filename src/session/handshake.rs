@@ -245,7 +245,7 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
         "attestation verification succeeded"
     );
     tracing::debug!(
-        measurements = ?verified.measurements.iter().map(hex::encode).collect::<Vec<_>>(),
+        measurements = ?verified.measurements.iter().map(|(k, v)| (k, hex::encode(v))).collect::<Vec<_>>(),
         "peer attestation measurements"
     );
 

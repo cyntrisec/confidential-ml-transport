@@ -197,7 +197,11 @@ fn measurement_verification_passes_on_match() {
     expected.insert(1, vec![0xBB; 32]);
 
     let measurements = ExpectedMeasurements::new(expected);
-    let actual = vec![vec![0xAA; 32], vec![0xBB; 32], vec![0xCC; 32]];
+    let actual = BTreeMap::from([
+        (0, vec![0xAA; 32]),
+        (1, vec![0xBB; 32]),
+        (2, vec![0xCC; 32]),
+    ]);
 
     assert!(measurements.verify(&actual).is_ok());
 }
@@ -208,7 +212,7 @@ fn measurement_verification_fails_on_mismatch() {
     expected.insert(0, vec![0xAA; 32]);
 
     let measurements = ExpectedMeasurements::new(expected);
-    let actual = vec![vec![0xFF; 32]]; // different
+    let actual = BTreeMap::from([(0, vec![0xFF; 32])]); // different
 
     let result = measurements.verify(&actual);
     assert!(result.is_err());
@@ -225,7 +229,7 @@ fn measurement_verification_fails_on_missing_index() {
     expected.insert(5, vec![0xAA; 32]); // index 5 doesn't exist
 
     let measurements = ExpectedMeasurements::new(expected);
-    let actual = vec![vec![0xAA; 32]]; // only index 0
+    let actual = BTreeMap::from([(0, vec![0xAA; 32])]); // only index 0
 
     let result = measurements.verify(&actual);
     assert!(result.is_err());
@@ -239,7 +243,7 @@ fn measurement_verification_fails_on_missing_index() {
 #[test]
 fn no_verification_when_empty() {
     let measurements = ExpectedMeasurements::new(BTreeMap::new());
-    let actual = vec![vec![0xAA; 32]];
+    let actual = BTreeMap::from([(0, vec![0xAA; 32])]);
     assert!(measurements.verify(&actual).is_ok());
 }
 
@@ -253,8 +257,11 @@ async fn measurement_verification_in_handshake() {
 
     let provider = MockProvider::new();
 
-    // Server returns measurements [0xAA*32, 0xBB*32].
-    let verifier = MockVerifierWithMeasurements::new(vec![vec![0xAA; 32], vec![0xBB; 32]]);
+    // Server returns measurements {0: 0xAA*32, 1: 0xBB*32}.
+    let verifier = MockVerifierWithMeasurements::new(BTreeMap::from([
+        (0, vec![0xAA; 32]),
+        (1, vec![0xBB; 32]),
+    ]));
 
     // Client expects measurement[0] == 0xAA*32.
     let mut expected = BTreeMap::new();
@@ -298,8 +305,8 @@ async fn measurement_mismatch_rejects_handshake() {
 
     let provider = MockProvider::new();
 
-    // Server returns measurements [0xAA*32].
-    let verifier = MockVerifierWithMeasurements::new(vec![vec![0xAA; 32]]);
+    // Server returns measurements {0: 0xAA*32}.
+    let verifier = MockVerifierWithMeasurements::new(BTreeMap::from([(0, vec![0xAA; 32])]));
 
     // Client expects measurement[0] == 0xFF*32 (mismatch).
     let mut expected = BTreeMap::new();

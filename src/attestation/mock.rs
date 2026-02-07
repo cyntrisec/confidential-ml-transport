@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
@@ -114,7 +116,7 @@ impl AttestationVerifier for MockVerifier {
             user_data: fields[0].clone(),
             nonce: fields[1].clone(),
             public_key: fields[2].clone(),
-            measurements: vec![],
+            measurements: BTreeMap::new(),
         })
     }
 }
@@ -125,11 +127,11 @@ impl AttestationVerifier for MockVerifier {
 /// `measurements` field with the configured values. This enables testing
 /// measurement verification without a real TEE.
 pub struct MockVerifierWithMeasurements {
-    measurements: Vec<Vec<u8>>,
+    measurements: BTreeMap<usize, Vec<u8>>,
 }
 
 impl MockVerifierWithMeasurements {
-    pub fn new(measurements: Vec<Vec<u8>>) -> Self {
+    pub fn new(measurements: BTreeMap<usize, Vec<u8>>) -> Self {
         Self { measurements }
     }
 }

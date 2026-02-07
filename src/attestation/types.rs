@@ -30,9 +30,9 @@ impl ExpectedMeasurements {
     }
 
     /// Verify that all expected measurements match the actual values.
-    pub fn verify(&self, actual: &[Vec<u8>]) -> Result<(), AttestError> {
+    pub fn verify(&self, actual: &BTreeMap<usize, Vec<u8>>) -> Result<(), AttestError> {
         for (&idx, expected) in &self.values {
-            match actual.get(idx) {
+            match actual.get(&idx) {
                 Some(actual_val) => {
                     if actual_val != expected {
                         return Err(AttestError::VerificationFailed(format!(
@@ -66,6 +66,6 @@ pub struct VerifiedAttestation {
     /// Nonce extracted from the attestation (if present).
     pub nonce: Option<Vec<u8>>,
 
-    /// PCR values or measurement registers (platform-specific).
-    pub measurements: Vec<Vec<u8>>,
+    /// PCR values or measurement registers, keyed by register index (platform-specific).
+    pub measurements: BTreeMap<usize, Vec<u8>>,
 }
