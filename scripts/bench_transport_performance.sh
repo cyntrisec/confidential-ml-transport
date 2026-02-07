@@ -376,7 +376,7 @@ p("")
 emb = next((r for r in overhead_results if r["label"] == "1536b_embedding"), None)
 hs_us = hs["p50_ns"] / 1000 if hs["p50_ns"] else 0
 emb_us = emb["p50_ns"] / 1000 if emb and emb["p50_ns"] else 0
-# MiniLM-L6-v2 inference is ~90-116ms (from CLAUDE.md)
+# MiniLM-L6-v2 inference is ~90-116ms (measured with tcp-mock on release build)
 inference_ms = 100  # representative
 total_overhead_ms = (hs_us / 1000) + (emb_us / 1000)  # handshake + one RTT
 overhead_of_inference = total_overhead_ms / inference_ms * 100
