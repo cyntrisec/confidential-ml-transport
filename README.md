@@ -410,6 +410,7 @@ Measured on m5.xlarge (Intel Xeon 8175M, 2 vCPU enclave, 2 GiB) with real Nitro 
 
 Transport overhead is 0.27% of inference time — encryption is not the bottleneck. No measurable performance difference between debug and production enclave modes.
 
+Baseline: [`bench-baseline-v0.1.1`](https://github.com/cyntrisec/confidential-ml-transport/tree/bench-baseline-v0.1.1).
 See `benchmark_results/nitro_enclave/` for full data including raw measurements and debug vs production comparison.
 
 ## Crypto Design
