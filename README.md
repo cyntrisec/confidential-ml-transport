@@ -370,8 +370,8 @@ cargo bench --bench frame_codec
 # Fuzz the frame decoder (requires nightly)
 cd fuzz && cargo +nightly fuzz run fuzz_frame_decode -- -max_total_time=60
 
-# Run the echo server example
-cargo run --example echo_server
+# Run the echo server example (requires mock feature)
+cargo run --example echo_server --features mock
 ```
 
 ## Benchmarks

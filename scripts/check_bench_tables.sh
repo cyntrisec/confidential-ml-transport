@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# CI guard: every numeric value in the README benchmark table must appear in a
-# corresponding JSON file under benchmark_results/.  This prevents someone from
-# editing the README numbers without updating (or adding) raw data.
+# CI guard: every p50/p95 value in the README "## Performance" table must match
+# a corresponding "p50_ms" / "p95_ms" key in a JSON file under benchmark_results/.
 #
 # Usage: bash scripts/check_bench_tables.sh [base_ref]
 #   base_ref  optional git ref to diff against (default: HEAD~1)
@@ -18,9 +17,7 @@ BASE_REF="${1:-HEAD~1}"
 
 if [ "$BASE_REF" = "full" ]; then
     echo "Mode: full validation (no diff filtering)"
-    check_all=true
 else
-    # Get lines changed in README between base and working tree / HEAD
     changed_lines=$(git diff "$BASE_REF" -- README.md 2>/dev/null || true)
 
     if [ -z "$changed_lines" ]; then
@@ -28,7 +25,6 @@ else
         exit 0
     fi
 
-    # Check if any table row with "ms" was touched
     bench_touched=$(echo "$changed_lines" | grep -E '^\+.*\|.*ms' || true)
 
     if [ -z "$bench_touched" ]; then
@@ -39,12 +35,12 @@ else
     echo "Benchmark table rows changed in README:"
     echo "$bench_touched"
     echo ""
-    check_all=false
 fi
 
-# --- Step 2: extract numeric values from the README performance table ---
+# --- Step 2: extract p50 and p95 values from each data row by column position ---
+# Table format: | Phase | p50 | p95 | n |
+# We split on "|" and pick columns 2 (p50) and 3 (p95) by index.
 
-# Find the "## Performance" section and extract table rows with "ms" values
 perf_section=$(sed -n '/^## Performance/,/^## /p' "$README" | head -n -1)
 
 if [ -z "$perf_section" ]; then
@@ -52,17 +48,13 @@ if [ -z "$perf_section" ]; then
     exit 1
 fi
 
-# Extract all p50 values from the table (column 2 — the first data column)
-p50_values=$(echo "$perf_section" | grep -oP '\|\s*[\d.]+\s*ms' | head -3 | grep -oP '[\d.]+')
+# Extract data rows (skip header and separator lines)
+data_rows=$(echo "$perf_section" | grep -E '^\|' | grep -v -E '^\|[-\s]+' | grep -v -E '^\| Phase')
 
-if [ -z "$p50_values" ]; then
-    echo "FAIL: Could not extract p50 values from README performance table."
+if [ -z "$data_rows" ]; then
+    echo "FAIL: No data rows found in Performance table."
     exit 1
 fi
-
-echo "README p50 values: $(echo $p50_values | tr '\n' ' ')"
-
-# --- Step 3: verify each value exists in at least one JSON file ---
 
 fail=0
 json_files=$(find "$BENCH_DIR" -name '*.json' -type f 2>/dev/null || true)
@@ -72,21 +64,58 @@ if [ -z "$json_files" ]; then
     exit 1
 fi
 
-for val in $p50_values; do
-    found=false
+echo "Validating README performance table values against JSON data..."
+echo ""
+
+while IFS= read -r row; do
+    # Split on "|" — fields: [0]="" [1]=Phase [2]=p50 [3]=p95 [4]=n
+    p50_raw=$(echo "$row" | awk -F'|' '{print $3}')
+    p95_raw=$(echo "$row" | awk -F'|' '{print $4}')
+    phase=$(echo "$row" | awk -F'|' '{print $2}' | sed 's/^ *//;s/ *$//')
+
+    # Extract numeric value (strip "ms" and whitespace)
+    p50=$(echo "$p50_raw" | grep -oP '[\d.]+' || true)
+    p95=$(echo "$p95_raw" | grep -oP '[\d.]+' || true)
+
+    if [ -z "$p50" ] || [ -z "$p95" ]; then
+        echo "WARN: Could not parse values from row: $row"
+        continue
+    fi
+
+    echo "  Row: $phase"
+
+    # Validate p50 against "p50_ms": <value> in JSON
+    p50_found=false
     for json in $json_files; do
-        if grep -q "$val" "$json"; then
-            found=true
+        if grep -qE "\"p50_ms\"[[:space:]]*:[[:space:]]*$p50" "$json"; then
+            p50_found=true
             break
         fi
     done
-    if [ "$found" = false ]; then
-        echo "FAIL: p50 value ${val}ms in README not found in any benchmark JSON file."
+
+    if [ "$p50_found" = false ]; then
+        echo "    FAIL: p50=${p50}ms not found as p50_ms in any benchmark JSON."
         fail=1
     else
-        echo "  OK: ${val}ms found in benchmark data."
+        echo "    OK: p50=${p50}ms matches p50_ms in benchmark data."
     fi
-done
+
+    # Validate p95 against "p95_ms": <value> in JSON
+    p95_found=false
+    for json in $json_files; do
+        if grep -qE "\"p95_ms\"[[:space:]]*:[[:space:]]*$p95" "$json"; then
+            p95_found=true
+            break
+        fi
+    done
+
+    if [ "$p95_found" = false ]; then
+        echo "    FAIL: p95=${p95}ms not found as p95_ms in any benchmark JSON."
+        fail=1
+    else
+        echo "    OK: p95=${p95}ms matches p95_ms in benchmark data."
+    fi
+done <<< "$data_rows"
 
 if [ "$fail" -ne 0 ]; then
     echo ""
@@ -96,4 +125,4 @@ if [ "$fail" -ne 0 ]; then
 fi
 
 echo ""
-echo "OK: All README benchmark values backed by raw JSON data."
+echo "OK: All README benchmark values backed by raw JSON data (key-matched)."
