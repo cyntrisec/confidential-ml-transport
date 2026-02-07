@@ -24,7 +24,8 @@
     },
     "attestation_document_hash": "40235006940aab2f5d89d9afee362e15d41b3149e63fdfd4c367bc7421c16d5c",
     "measurement_count": 16,
-    "debug_mode": true
+    "debug_mode": true,
+    "debug_mode_note": "DEBUG_MODE: PCR0 is zeroed, console access enabled. Not representative of production security posture."
   },
   "model": {
     "name": "all-MiniLM-L6-v2",
@@ -42,7 +43,7 @@
       "mean_ms": 93.2,
       "min_ms": 91,
       "max_ms": 104,
-      "note": "First request ~12ms slower (cold start / allocations)"
+      "note": "End-to-end app latencies (connect + handshake + inference), not pure transport benchmarks. First request ~12ms slower (cold start / allocations). See isolated_bench_results.json for phase-separated measurements."
     },
     "burst_5_texts": {
       "description": "5 texts in single connection (1 handshake + 5 inferences)",

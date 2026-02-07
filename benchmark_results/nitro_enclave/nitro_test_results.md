@@ -4,6 +4,10 @@
 **Crate:** confidential-ml-transport v0.1.1
 **Attestation:** Real AWS Nitro (NitroProvider / NitroVerifier)
 
+> **Note:** Enclave runs in `DEBUG_MODE`. PCR values differ from production
+> (PCR0 is zeroed in debug mode). These results demonstrate functional
+> correctness and directional performance, not production security posture.
+
 ## Instance
 
 | Parameter | Value |

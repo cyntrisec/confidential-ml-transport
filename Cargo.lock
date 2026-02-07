@@ -1711,6 +1711,7 @@ dependencies = [
  "serde_json",
  "tokenizers",
  "tokio",
+ "tokio-vsock",
  "tracing",
  "tracing-subscriber",
 ]

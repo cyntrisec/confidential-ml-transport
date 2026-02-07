@@ -1,0 +1,64 @@
+{
+  "benchmark_type": "isolated_nitro_phases",
+  "crate_version": "0.1.1",
+  "test_date": "2026-02-07",
+  "instance": {
+    "type": "m5.xlarge",
+    "region": "us-east-1",
+    "cpu": "Intel Xeon Platinum 8175M @ 2.50GHz",
+    "vcpus_total": 4,
+    "vcpus_enclave": 2,
+    "memory_total_gib": 16,
+    "memory_enclave_mib": 2048,
+    "kernel": "6.1.159-182.297.amzn2023.x86_64",
+    "os": "Amazon Linux 2023",
+    "enclave_mode": "DEBUG_MODE"
+  },
+  "phases": {
+    "connect_handshake": {
+      "label": "connect+handshake (VSock + Nitro attestation)",
+      "description": "Full VSock connect + 3-message handshake with real Nitro attestation (NSM call + COSE_Sign1 verification)",
+      "n": 50,
+      "min_ms": 5.575,
+      "max_ms": 5.890,
+      "mean_ms": 5.718,
+      "p50_ms": 5.711,
+      "p95_ms": 5.825,
+      "p99_ms": 5.890
+    },
+    "transport_rtt": {
+      "label": "transport RTT (64B echo, encrypted channel)",
+      "description": "Round-trip of 64-byte ECHO payload over established encrypted SecureChannel via VSock. Measures: encrypt + frame + VSock write + server read + deframe + echo + frame + VSock write + client read + deframe + decrypt",
+      "n": 200,
+      "min_ms": 0.222,
+      "max_ms": 0.423,
+      "mean_ms": 0.247,
+      "p50_ms": 0.244,
+      "p95_ms": 0.277,
+      "p99_ms": 0.307
+    },
+    "inference_rtt": {
+      "label": "inference RTT (MiniLM-L6-v2, 384-dim F32)",
+      "description": "Round-trip of text payload → model inference → 384-dim F32 tensor response over established encrypted SecureChannel via VSock",
+      "n": 50,
+      "min_ms": 97.903,
+      "max_ms": 99.439,
+      "mean_ms": 98.220,
+      "p50_ms": 98.172,
+      "p95_ms": 98.490,
+      "p99_ms": 99.439
+    }
+  },
+  "derived": {
+    "inference_only_mean_ms": 97.973,
+    "transport_overhead_per_msg_ms": 0.247,
+    "transport_overhead_pct_of_inference": 0.25,
+    "handshake_amortized_over_100_requests_ms": 0.057
+  },
+  "notes": [
+    "DEBUG_MODE: Enclave runs in debug mode which allows console access. PCR values differ from production mode (PCR0 is zeroed in debug). Not representative of production security posture.",
+    "Sample sizes: handshake n=50, transport RTT n=200, inference n=50. Sufficient for stable p50/p95; p99 is coarse at n=50.",
+    "All measurements include full protocol overhead (encryption, framing, VSock I/O). No synthetic exclusions.",
+    "Inference-only estimate is derived (inference RTT - transport RTT), not directly measured inside the enclave."
+  ]
+}
