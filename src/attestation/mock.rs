@@ -18,6 +18,7 @@ use crate::error::AttestError;
 pub struct MockProvider;
 
 impl MockProvider {
+    /// Create a new mock attestation provider.
     pub fn new() -> Self {
         Self
     }
@@ -64,6 +65,7 @@ impl AttestationProvider for MockProvider {
 pub struct MockVerifier;
 
 impl MockVerifier {
+    /// Create a new mock attestation verifier.
     pub fn new() -> Self {
         Self
     }
@@ -137,6 +139,7 @@ pub struct MockVerifierWithMeasurements {
 }
 
 impl MockVerifierWithMeasurements {
+    /// Create a mock verifier that returns the given measurement values.
     pub fn new(measurements: BTreeMap<usize, Vec<u8>>) -> Self {
         Self { measurements }
     }

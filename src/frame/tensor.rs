@@ -17,6 +17,7 @@ pub enum DType {
 }
 
 impl DType {
+    /// Parse a raw byte into a [`DType`], returning an error for unknown values.
     pub fn from_u8(v: u8) -> Result<Self, FrameError> {
         match v {
             0 => Ok(Self::F32),

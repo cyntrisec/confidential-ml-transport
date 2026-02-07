@@ -36,6 +36,7 @@ pub enum FrameType {
 }
 
 impl FrameType {
+    /// Parse a raw byte into a [`FrameType`], returning an error for unknown values.
     pub fn from_u8(v: u8) -> std::result::Result<Self, FrameError> {
         match v {
             0x01 => Ok(Self::Hello),
@@ -59,6 +60,7 @@ impl Flags {
     pub const BATCH: u8 = 0x04;
     pub const COMPRESSED: u8 = 0x08;
 
+    /// Construct an empty flags value (all bits clear).
     pub const fn empty() -> Self {
         Self(0)
     }
@@ -73,18 +75,22 @@ impl Flags {
         self.0
     }
 
+    /// Returns `true` if the encrypted flag is set.
     pub const fn is_encrypted(self) -> bool {
         self.0 & Self::ENCRYPTED != 0
     }
 
+    /// Returns `true` if the tensor-payload flag is set.
     pub const fn is_tensor_payload(self) -> bool {
         self.0 & Self::TENSOR_PAYLOAD != 0
     }
 
+    /// Returns `true` if the batch flag is set.
     pub const fn is_batch(self) -> bool {
         self.0 & Self::BATCH != 0
     }
 
+    /// Returns `true` if the compressed flag is set.
     pub const fn is_compressed(self) -> bool {
         self.0 & Self::COMPRESSED != 0
     }

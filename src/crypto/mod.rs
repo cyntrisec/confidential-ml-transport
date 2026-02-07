@@ -39,12 +39,14 @@ impl CipherSuite {
 pub struct SymmetricKey(pub [u8; 32]);
 
 impl SymmetricKey {
+    /// Borrow the raw key bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
 impl From<[u8; 32]> for SymmetricKey {
+    /// Construct a [`SymmetricKey`] from a raw 32-byte array.
     fn from(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }

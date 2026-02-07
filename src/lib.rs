@@ -1,10 +1,24 @@
+//! Attestation-bound encrypted tensor transport for confidential ML inference.
+//!
+//! This crate provides a secure channel built on X25519 + HKDF-SHA256 +
+//! ChaCha20-Poly1305 with pluggable TEE attestation (Nitro, SEV-SNP, mock).
+//! It includes binary tensor framing, transparent proxy helpers, and
+//! transport backends for TCP and VSock.
+
+/// TEE attestation providers and verifiers (mock, Nitro).
 pub mod attestation;
+/// Cryptographic primitives: key exchange, AEAD sealing, transcript hashing.
 pub mod crypto;
+/// Error types for every layer of the stack.
 pub mod error;
+/// Binary wire framing and tensor sub-protocol.
 pub mod frame;
+/// Secure session: handshake, encrypted channel, retry policy.
 pub mod session;
+/// Pluggable transport backends (TCP, VSock).
 pub mod transport;
 
+/// Transparent encryption/decryption proxies (client and server).
 #[cfg(feature = "tcp")]
 pub mod proxy;
 

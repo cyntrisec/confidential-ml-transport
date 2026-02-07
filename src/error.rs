@@ -128,4 +128,5 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
+/// Crate-level `Result` alias using [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;

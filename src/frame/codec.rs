@@ -20,6 +20,7 @@ impl Default for FrameCodec {
 }
 
 impl FrameCodec {
+    /// Create a new codec using the default maximum payload size (32 MiB).
     pub fn new() -> Self {
         Self {
             current_header: None,

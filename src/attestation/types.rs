@@ -10,6 +10,7 @@ pub struct AttestationDocument {
 }
 
 impl AttestationDocument {
+    /// Construct an attestation document from raw COSE/report bytes.
     pub fn new(raw: Vec<u8>) -> Self {
         Self { raw }
     }
@@ -25,6 +26,7 @@ pub struct ExpectedMeasurements {
 }
 
 impl ExpectedMeasurements {
+    /// Construct from a map of register index to expected byte value.
     pub fn new(values: BTreeMap<usize, Vec<u8>>) -> Self {
         Self { values }
     }

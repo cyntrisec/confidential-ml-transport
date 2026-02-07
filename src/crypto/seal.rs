@@ -55,6 +55,7 @@ impl Drop for SealingContext {
 }
 
 impl SealingContext {
+    /// Create a new encryption context from a symmetric key and session ID.
     pub fn new(key: &SymmetricKey, session_id: [u8; 32]) -> Self {
         let cipher = ChaCha20Poly1305::new_from_slice(key.as_bytes()).expect("key length is 32");
         Self {
@@ -131,6 +132,7 @@ impl Drop for OpeningContext {
 }
 
 impl OpeningContext {
+    /// Create a new decryption context from a symmetric key and session ID.
     pub fn new(key: &SymmetricKey, session_id: [u8; 32]) -> Self {
         let cipher = ChaCha20Poly1305::new_from_slice(key.as_bytes()).expect("key length is 32");
         Self {

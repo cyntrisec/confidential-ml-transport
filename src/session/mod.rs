@@ -69,21 +69,25 @@ impl Default for SessionConfigBuilder {
 }
 
 impl SessionConfigBuilder {
+    /// Set the maximum frame payload size in bytes (default: 32 MiB).
     pub fn max_payload_size(mut self, size: u32) -> Self {
         self.max_payload_size = size;
         self
     }
 
+    /// Set the handshake timeout duration (default: 30s).
     pub fn handshake_timeout(mut self, timeout: Duration) -> Self {
         self.handshake_timeout = timeout;
         self
     }
 
+    /// Set the connection retry policy.
     pub fn retry_policy(mut self, policy: RetryPolicy) -> Self {
         self.retry_policy = Some(policy);
         self
     }
 
+    /// Set expected PCR/measurement values to verify against the peer's attestation.
     pub fn expected_measurements(mut self, measurements: ExpectedMeasurements) -> Self {
         self.expected_measurements = Some(measurements);
         self
