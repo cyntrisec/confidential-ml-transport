@@ -92,4 +92,51 @@ The transparent proxy (both client and server) limits concurrent connections via
 
 ## Reporting Vulnerabilities
 
-If you discover a security vulnerability, please report it via [GitHub Security Advisories](https://github.com/cyntrisec/confidential-ml-transport/security/advisories/new) or email the maintainers directly. Do not open a public issue for security vulnerabilities.
+**Please do not open a public issue for security vulnerabilities.**
+
+### How to Report
+
+Report vulnerabilities through one of these channels:
+
+1. **GitHub Security Advisories** (preferred): [Create a new advisory](https://github.com/cyntrisec/confidential-ml-transport/security/advisories/new)
+2. **GitHub private message**: Contact [@tsyrulb](https://github.com/tsyrulb)
+
+Include as much of the following as possible:
+
+- Description of the vulnerability
+- Steps to reproduce or a proof-of-concept
+- Affected versions
+- Potential impact (confidentiality, integrity, availability)
+
+### Response Timeline
+
+| Action | Target |
+|--------|--------|
+| Acknowledge receipt | 48 hours |
+| Initial assessment | 7 days |
+| Fix or mitigation available | 30 days (best effort) |
+| Public disclosure | After fix is released, or 90 days (whichever is first) |
+
+### Supported Versions
+
+| Version | Supported |
+|---------|-----------|
+| 0.1.x (latest) | Yes |
+| < 0.1.0 | No |
+
+### Disclosure Policy
+
+We follow coordinated disclosure:
+
+1. Reporter submits vulnerability privately.
+2. We confirm the issue and assess severity.
+3. We develop and test a fix on a private branch.
+4. We release the fix and publish a security advisory.
+5. We credit the reporter (unless they prefer anonymity).
+
+### Past Security Fixes
+
+| Version | Fix | Severity |
+|---------|-----|----------|
+| 0.1.2 | Constant-time confirmation hash comparison (`subtle::ct_eq`) to prevent timing side-channel | Medium |
+| 0.1.2 | Semaphore permit panic safety to prevent connection slot exhaustion | Low |
