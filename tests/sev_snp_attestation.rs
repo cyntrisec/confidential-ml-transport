@@ -151,10 +151,12 @@ async fn sev_snp_handshake_rejects_wrong_measurement() {
     });
 
     let client_config = SessionConfig::default();
-    let result =
-        SecureChannel::connect_with_attestation(client_io, &verifier, client_config).await;
+    let result = SecureChannel::connect_with_attestation(client_io, &verifier, client_config).await;
 
-    assert!(result.is_err(), "handshake should fail on measurement mismatch");
+    assert!(
+        result.is_err(),
+        "handshake should fail on measurement mismatch"
+    );
 }
 
 #[tokio::test]

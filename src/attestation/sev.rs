@@ -82,14 +82,15 @@ impl AttestationProvider for SevSnpProvider {
         }
 
         // Request extended report (includes certificate chain).
-        let mut fw = self.firmware.lock().map_err(|e| {
-            AttestError::GenerationFailed(format!("firmware mutex poisoned: {e}"))
-        })?;
-        let (report_bytes, certs) = fw
-            .get_ext_report(None, Some(report_data), None)
-            .map_err(|e| {
-                AttestError::GenerationFailed(format!("SEV-SNP get_ext_report failed: {e}"))
-            })?;
+        let mut fw = self
+            .firmware
+            .lock()
+            .map_err(|e| AttestError::GenerationFailed(format!("firmware mutex poisoned: {e}")))?;
+        let (report_bytes, certs) =
+            fw.get_ext_report(None, Some(report_data), None)
+                .map_err(|e| {
+                    AttestError::GenerationFailed(format!("SEV-SNP get_ext_report failed: {e}"))
+                })?;
 
         // Serialize certificate chain entries to DER bytes.
         let cert_chain_bytes = match certs {
@@ -234,9 +235,12 @@ fn decode_sev_snp_document(raw: &[u8]) -> Result<(Vec<u8>, Vec<u8>), AttestError
             "truncated SEV-SNP document (report_size)".into(),
         ));
     }
-    let report_size =
-        u32::from_le_bytes([raw[offset], raw[offset + 1], raw[offset + 2], raw[offset + 3]])
-            as usize;
+    let report_size = u32::from_le_bytes([
+        raw[offset],
+        raw[offset + 1],
+        raw[offset + 2],
+        raw[offset + 3],
+    ]) as usize;
     offset += 4;
 
     if offset + report_size > raw.len() {
@@ -253,9 +257,12 @@ fn decode_sev_snp_document(raw: &[u8]) -> Result<(Vec<u8>, Vec<u8>), AttestError
             "truncated SEV-SNP document (cert_chain_size)".into(),
         ));
     }
-    let cert_chain_size =
-        u32::from_le_bytes([raw[offset], raw[offset + 1], raw[offset + 2], raw[offset + 3]])
-            as usize;
+    let cert_chain_size = u32::from_le_bytes([
+        raw[offset],
+        raw[offset + 1],
+        raw[offset + 2],
+        raw[offset + 3],
+    ]) as usize;
     offset += 4;
 
     if offset + cert_chain_size > raw.len() {
