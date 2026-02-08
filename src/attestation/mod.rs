@@ -6,6 +6,9 @@ pub mod mock;
 #[cfg(feature = "nitro")]
 pub mod nitro;
 
+#[cfg(feature = "sev-snp")]
+pub mod sev;
+
 use async_trait::async_trait;
 
 use crate::error::AttestError;

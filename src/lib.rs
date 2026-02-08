@@ -38,3 +38,6 @@ pub use attestation::mock::{MockProvider, MockVerifier, MockVerifierWithMeasurem
 
 #[cfg(feature = "nitro")]
 pub use attestation::nitro::{NitroProvider, NitroVerifier};
+
+#[cfg(feature = "sev-snp")]
+pub use attestation::sev::{SevSnpProvider, SevSnpVerifier};

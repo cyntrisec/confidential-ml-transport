@@ -34,6 +34,7 @@ ciborium = { version = "0.2", optional = true }
 openssl = { version = "0.10", optional = true }
 aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
 serde_bytes = { version = "0.11", optional = true }
+sev = { version = "7", default-features = false, features = ["snp", "openssl"], optional = true }
 
 [features]
 default = ["tcp"]
@@ -41,6 +42,7 @@ mock = []
 tcp = []
 vsock = ["dep:tokio-vsock"]
 nitro = ["dep:coset", "dep:ciborium", "dep:openssl", "dep:aws-nitro-enclaves-nsm-api", "dep:serde_bytes"]
+sev-snp = ["dep:sev", "dep:openssl"]
 
 [dev-dependencies]
 proptest = "1.4"

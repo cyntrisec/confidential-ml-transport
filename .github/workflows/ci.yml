@@ -43,6 +43,7 @@ jobs:
           - --no-default-features --features mock
           - --no-default-features --features tcp
           - --no-default-features --features "tcp,mock"
+          - --no-default-features --features sev-snp
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
