@@ -9,6 +9,9 @@ pub mod nitro;
 #[cfg(feature = "sev-snp")]
 pub mod sev;
 
+#[cfg(feature = "tdx")]
+pub mod tdx;
+
 use async_trait::async_trait;
 
 use crate::error::AttestError;

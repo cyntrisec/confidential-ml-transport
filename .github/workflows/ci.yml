@@ -44,6 +44,7 @@ jobs:
           - --no-default-features --features tcp
           - --no-default-features --features "tcp,mock"
           - --no-default-features --features sev-snp
+          - --no-default-features --features tdx
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

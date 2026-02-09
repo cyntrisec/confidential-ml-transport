@@ -43,6 +43,7 @@ tcp = []
 vsock = ["dep:tokio-vsock"]
 nitro = ["dep:coset", "dep:ciborium", "dep:openssl", "dep:aws-nitro-enclaves-nsm-api", "dep:serde_bytes"]
 sev-snp = ["dep:sev", "dep:openssl"]
+tdx = ["dep:openssl"]
 
 [dev-dependencies]
 proptest = "1.4"

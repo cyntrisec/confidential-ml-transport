@@ -41,3 +41,6 @@ pub use attestation::nitro::{NitroProvider, NitroVerifier};
 
 #[cfg(feature = "sev-snp")]
 pub use attestation::sev::{SevSnpProvider, SevSnpVerifier};
+
+#[cfg(feature = "tdx")]
+pub use attestation::tdx::{TdxProvider, TdxVerifier};
