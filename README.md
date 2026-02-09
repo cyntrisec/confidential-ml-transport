@@ -53,7 +53,7 @@ let mut client = SecureChannel::connect_with_attestation(
 client.send(Bytes::from("hello")).await?;
 ```
 
-> **Note:** `MockProvider`/`MockVerifier` perform no real attestation and are for **testing and development only**. For production, use `NitroProvider`/`NitroVerifier` (feature `nitro`) or implement the `AttestationProvider`/`AttestationVerifier` traits for your TEE platform.
+> **Note:** `MockProvider`/`MockVerifier` perform no real attestation and are for **testing and development only**. For production, use `NitroProvider`/`NitroVerifier` (feature `nitro`), `SevSnpProvider`/`SevSnpVerifier` (feature `sev-snp`), `TdxProvider`/`TdxVerifier` (feature `tdx`), or implement the `AttestationProvider`/`AttestationVerifier` traits for your TEE platform.
 
 ## Overview
 
@@ -66,7 +66,7 @@ client.send(Bytes::from("hello")).await?;
 - **Full channel encryption** — all post-handshake frames (data, tensor, heartbeat, shutdown, error) are encrypted and authenticated via AEAD
 - **Key material protection** — symmetric keys zeroized on drop, contributory DH check, domain-separated session ID
 - **Pluggable transports** — TCP and VSock backends via feature flags
-- **Pluggable attestation** — trait-based attestation provider/verifier, with mock and Nitro implementations (SEV-SNP, TDX implementable downstream)
+- **Pluggable attestation** — trait-based attestation provider/verifier, with mock, Nitro, SEV-SNP, and TDX implementations
 - **Monotonic sequence enforcement** — replay protection on every decrypted message
 - **Hardened handshake** — configurable timeout, mandatory public key binding, sequence validation, confirmation binds both keys
 - **Measurement verification** — verify PCR/measurement registers against expected values during handshake
@@ -293,9 +293,53 @@ let tensor = TensorRef {
 channel.send_tensor(tensor).await?;
 ```
 
+### TDX attestation (Intel TDX)
+
+> **Requires feature `tdx`:** `cargo add confidential-ml-transport --features tdx`
+>
+> `TdxProvider` uses the Linux configfs-tsm ABI (`/sys/kernel/config/tsm/report/`) available on kernel 6.7+. `TdxVerifier` parses TDX v4/v5 quotes and verifies the ECDSA-P256 attestation signature. Tested on GCP `c3-standard-4` confidential VMs with real TDX hardware.
+
+```rust
+use confidential_ml_transport::{TdxProvider, TdxVerifier, SecureChannel, SessionConfig};
+
+// Server (inside TDX TD): generate real TDX attestation
+let provider = TdxProvider::new();
+let mut server = SecureChannel::accept_with_attestation(
+    stream, &provider, SessionConfig::default(),
+).await?;
+
+// Client: verify TDX attestation with optional MRTD check
+let verifier = TdxVerifier::new(Some(expected_mrtd.to_vec())); // or None to accept any
+let mut client = SecureChannel::connect_with_attestation(
+    stream, &verifier, SessionConfig::default(),
+).await?;
+```
+
+`TdxVerifier` extracts measurements as: MRTD → `measurements[0]`, RTMR0-3 → `measurements[1..5]`.
+
+### SEV-SNP attestation (AMD SEV-SNP)
+
+> **Requires feature `sev-snp`:** `cargo add confidential-ml-transport --features sev-snp`
+
+```rust
+use confidential_ml_transport::{SevSnpProvider, SevSnpVerifier, SecureChannel, SessionConfig};
+
+// Server (inside SEV-SNP VM)
+let provider = SevSnpProvider::new();
+let mut server = SecureChannel::accept_with_attestation(
+    stream, &provider, SessionConfig::default(),
+).await?;
+
+// Client: verify SEV-SNP attestation
+let verifier = SevSnpVerifier::new(None);
+let mut client = SecureChannel::connect_with_attestation(
+    stream, &verifier, SessionConfig::default(),
+).await?;
+```
+
 ### Custom attestation provider
 
-Implement the `AttestationProvider` and `AttestationVerifier` traits for your TEE platform:
+For TEE platforms without a built-in implementation, implement the `AttestationProvider` and `AttestationVerifier` traits:
 
 ```rust
 use async_trait::async_trait;
@@ -321,7 +365,13 @@ impl AttestationProvider for MyProvider {
 }
 ```
 
-A built-in `NitroProvider` and `NitroVerifier` are available behind the `nitro` feature flag for AWS Nitro Enclaves.
+Built-in attestation implementations:
+
+| Provider/Verifier | Feature | TEE Platform |
+|---|---|---|
+| `NitroProvider` / `NitroVerifier` | `nitro` | AWS Nitro Enclaves |
+| `SevSnpProvider` / `SevSnpVerifier` | `sev-snp` | AMD SEV-SNP (Azure, GCP) |
+| `TdxProvider` / `TdxVerifier` | `tdx` | Intel TDX (GCP, Azure) |
 
 ## Features
 
@@ -331,6 +381,8 @@ A built-in `NitroProvider` and `NitroVerifier` are available behind the `nitro` 
 | `tcp` | Yes | TCP transport helpers and transparent proxy |
 | `vsock` | No | VSock transport via `tokio-vsock` |
 | `nitro` | No | AWS Nitro Enclave attestation (NitroProvider/NitroVerifier) |
+| `sev-snp` | No | AMD SEV-SNP attestation (SevSnpProvider/SevSnpVerifier) |
+| `tdx` | No | Intel TDX attestation (TdxProvider/TdxVerifier) |
 
 ```bash
 # Default (tcp only)
@@ -344,6 +396,12 @@ cargo build --features vsock
 
 # With Nitro attestation (requires libssl-dev)
 cargo build --features nitro
+
+# With SEV-SNP attestation (requires libssl-dev)
+cargo build --features sev-snp
+
+# With TDX attestation (requires libssl-dev)
+cargo build --features tdx
 
 # All features
 cargo build --all-features
@@ -364,10 +422,16 @@ cargo test --test session_retry
 # Proxy integration tests
 cargo test --test proxy_integration
 
+# SEV-SNP attestation tests
+cargo test --features sev-snp
+
+# TDX attestation tests
+cargo test --features tdx
+
 # Benchmarks
 cargo bench --bench frame_codec
 
-# Fuzz targets (requires nightly): frame_decode, tensor_decode, handshake_resp, aead_open
+# Fuzz targets (requires nightly): frame_decode, tensor_decode, handshake_resp, aead_open, handshake_init
 cargo +nightly fuzz run fuzz_frame_decode fuzz/seed_corpus/fuzz_frame_decode -- -max_total_time=60
 cargo +nightly fuzz run fuzz_handshake_resp fuzz/seed_corpus/fuzz_handshake_resp -- -max_total_time=60
 

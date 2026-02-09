@@ -22,7 +22,7 @@ Thank you for your interest in contributing!
 ## Development Requirements
 
 - Rust stable (edition 2021)
-- `libssl-dev` (for the `nitro` feature — `sudo apt-get install libssl-dev`)
+- `libssl-dev` (for the `nitro`, `sev-snp`, and `tdx` features — `sudo apt-get install libssl-dev`)
 - `tokio` runtime (tests use `#[tokio::test]`)
 
 ## Code Style
@@ -47,7 +47,7 @@ cargo test --test frame_roundtrip
 # Benchmarks
 cargo bench
 
-# Fuzz testing (4 targets: frame_decode, tensor_decode, handshake_resp, aead_open)
+# Fuzz testing (5 targets: frame_decode, tensor_decode, handshake_resp, handshake_init, aead_open)
 cargo +nightly fuzz run fuzz_frame_decode fuzz/seed_corpus/fuzz_frame_decode
 ```
 

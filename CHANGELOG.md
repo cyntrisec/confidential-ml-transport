@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Intel TDX attestation backend** — `TdxProvider` and `TdxVerifier` behind the `tdx` feature flag. `TdxProvider` uses the Linux configfs-tsm ABI (`/sys/kernel/config/tsm/report/`, kernel 6.7+). `TdxVerifier` parses TDX v4/v5 quotes, verifies ECDSA-P256 attestation signatures, and extracts MRTD + RTMR0-3 measurements. No new dependencies (reuses existing optional `openssl`).
+- TDX integration tests: handshake, measurement verification, measurement rejection, field extraction.
+- TDX added to CI feature matrix.
+- Dependabot configuration for Cargo and GitHub Actions dependencies.
+
+### Changed
+
+- Attestation backend count: 3 → 4 (mock, nitro, sev-snp, tdx).
+- CI feature combinations: 5 → 6.
+
 ## [0.1.3] - 2026-02-08
 
 Identical to 0.1.2 with a rustfmt fix (no API or behavior changes).
