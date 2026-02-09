@@ -146,10 +146,7 @@ async fn tdx_handshake_rejects_wrong_measurement() {
     let client_config = SessionConfig::default();
     let result = SecureChannel::connect_with_attestation(client_io, &verifier, client_config).await;
 
-    assert!(
-        result.is_err(),
-        "handshake should fail on MRTD mismatch"
-    );
+    assert!(result.is_err(), "handshake should fail on MRTD mismatch");
 }
 
 #[tokio::test]

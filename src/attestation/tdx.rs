@@ -130,14 +130,12 @@ impl AttestationProvider for TdxProvider {
         })?;
 
         // Write REPORTDATA to inblob.
-        fs::write(entry_path.join("inblob"), report_data).map_err(|e| {
-            AttestError::GenerationFailed(format!("failed to write inblob: {e}"))
-        })?;
+        fs::write(entry_path.join("inblob"), report_data)
+            .map_err(|e| AttestError::GenerationFailed(format!("failed to write inblob: {e}")))?;
 
         // Read the generated quote from outblob.
-        let quote = fs::read(entry_path.join("outblob")).map_err(|e| {
-            AttestError::GenerationFailed(format!("failed to read outblob: {e}"))
-        })?;
+        let quote = fs::read(entry_path.join("outblob"))
+            .map_err(|e| AttestError::GenerationFailed(format!("failed to read outblob: {e}")))?;
 
         // Clean up the entry.
         let _ = fs::remove_dir_all(&entry_path);
@@ -291,8 +289,7 @@ fn decode_tdx_document(raw: &[u8]) -> Result<Vec<u8>, AttestError> {
         ));
     }
 
-    let quote_size =
-        u32::from_le_bytes([raw[12], raw[13], raw[14], raw[15]]) as usize;
+    let quote_size = u32::from_le_bytes([raw[12], raw[13], raw[14], raw[15]]) as usize;
 
     if raw.len() < 16 + quote_size {
         return Err(AttestError::VerificationFailed(
@@ -465,21 +462,15 @@ fn verify_ecdsa_signature(
         AttestError::VerificationFailed(format!("failed to create BigNumContext: {e}"))
     })?;
 
-    let point =
-        openssl::ec::EcPoint::from_bytes(&group, &uncompressed, &mut ctx).map_err(|e| {
-            AttestError::VerificationFailed(format!(
-                "failed to parse attestation public key: {e}"
-            ))
-        })?;
-
-    let ec_key =
-        openssl::ec::EcKey::from_public_key(&group, &point).map_err(|e| {
-            AttestError::VerificationFailed(format!("failed to build EC key: {e}"))
-        })?;
-
-    let pkey = openssl::pkey::PKey::from_ec_key(ec_key).map_err(|e| {
-        AttestError::VerificationFailed(format!("failed to build PKey: {e}"))
+    let point = openssl::ec::EcPoint::from_bytes(&group, &uncompressed, &mut ctx).map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to parse attestation public key: {e}"))
     })?;
+
+    let ec_key = openssl::ec::EcKey::from_public_key(&group, &point)
+        .map_err(|e| AttestError::VerificationFailed(format!("failed to build EC key: {e}")))?;
+
+    let pkey = openssl::pkey::PKey::from_ec_key(ec_key)
+        .map_err(|e| AttestError::VerificationFailed(format!("failed to build PKey: {e}")))?;
 
     // Convert raw signature (r || s) to DER-encoded ECDSA signature.
     let r = openssl::bn::BigNum::from_slice(&sig_bytes[..32]).map_err(|e| {
@@ -501,15 +492,13 @@ fn verify_ecdsa_signature(
     let digest = Sha256::digest(&quote[..signed_len]);
 
     // Verify the signature.
-    let mut verifier =
-        openssl::sign::Verifier::new(openssl::hash::MessageDigest::sha256(), &pkey).map_err(
-            |e| AttestError::VerificationFailed(format!("failed to create verifier: {e}")),
-        )?;
+    let mut verifier = openssl::sign::Verifier::new(openssl::hash::MessageDigest::sha256(), &pkey)
+        .map_err(|e| AttestError::VerificationFailed(format!("failed to create verifier: {e}")))?;
 
     // For ECDSA, we verify the pre-hashed data using the DER signature directly.
-    let valid = verifier.verify_oneshot(&der_sig, &digest).map_err(|e| {
-        AttestError::VerificationFailed(format!("ECDSA verification error: {e}"))
-    })?;
+    let valid = verifier
+        .verify_oneshot(&der_sig, &digest)
+        .map_err(|e| AttestError::VerificationFailed(format!("ECDSA verification error: {e}")))?;
 
     if !valid {
         return Err(AttestError::VerificationFailed(
@@ -693,12 +682,7 @@ mod tests {
         reportdata[..32].copy_from_slice(&[0x42; 32]);
         reportdata[32..64].copy_from_slice(&[0x37; 32]);
         let mrtd = [0xBB; 48];
-        let rtmrs = [
-            [0x11; 48],
-            [0x22; 48],
-            [0x33; 48],
-            [0x44; 48],
-        ];
+        let rtmrs = [[0x11; 48], [0x22; 48], [0x33; 48], [0x44; 48]];
         let quote = build_synthetic_tdx_quote(reportdata, mrtd, rtmrs);
 
         let body = TdxQuoteBody::parse(&quote[HEADER_SIZE..HEADER_SIZE + BODY_SIZE_V4]).unwrap();
@@ -742,12 +726,7 @@ mod tests {
         reportdata[..32].copy_from_slice(&[0x42; 32]);
         reportdata[32..64].copy_from_slice(&[0x37; 32]);
         let mrtd = [0xEE; 48];
-        let rtmrs = [
-            [0x11; 48],
-            [0x22; 48],
-            [0x33; 48],
-            [0x44; 48],
-        ];
+        let rtmrs = [[0x11; 48], [0x22; 48], [0x33; 48], [0x44; 48]];
         let quote = build_synthetic_tdx_quote(reportdata, mrtd, rtmrs);
         let doc = AttestationDocument::new(encode_tdx_document(&quote));
 
@@ -817,6 +796,11 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn provider_fails_outside_tdx() {
+        // Skip if configfs-tsm path happens to exist (e.g., TDX-capable host or
+        // CI runner with configfs mounted).
+        if std::path::Path::new("/sys/kernel/config/tsm/report").exists() {
+            return;
+        }
         let result = TdxProvider::new();
         assert!(
             result.is_err(),
