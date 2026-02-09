@@ -27,7 +27,7 @@ candle-nn = "0.9"
 candle-transformers = "0.9"
 tokenizers = "0.20"
 safetensors = "0.5"
-hf-hub = "0.3"
+hf-hub = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1.38", features = ["full"] }
