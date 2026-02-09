@@ -5,19 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-02-09
 
 ### Added
 
+- **AMD SEV-SNP attestation backend** — `SevSnpProvider` and `SevSnpVerifier` behind the `sev-snp` feature flag. `SevSnpProvider` issues `/dev/sev-guest` attestation requests. `SevSnpVerifier` parses SEV-SNP attestation reports, verifies VCEK/VLEK ECDSA-P384 signatures via openssl, and extracts launch measurement + REPORTDATA. Depends on the `sev` crate (v7, snp + openssl features).
 - **Intel TDX attestation backend** — `TdxProvider` and `TdxVerifier` behind the `tdx` feature flag. `TdxProvider` uses the Linux configfs-tsm ABI (`/sys/kernel/config/tsm/report/`, kernel 6.7+). `TdxVerifier` parses TDX v4/v5 quotes, verifies ECDSA-P256 attestation signatures, and extracts MRTD + RTMR0-3 measurements. No new dependencies (reuses existing optional `openssl`).
+- SEV-SNP integration tests: handshake, measurement verification, measurement rejection, field extraction.
 - TDX integration tests: handshake, measurement verification, measurement rejection, field extraction.
 - TDX added to CI feature matrix.
+- SEV-SNP added to CI feature matrix.
 - Dependabot configuration for Cargo and GitHub Actions dependencies.
+- `CODE_OF_CONDUCT.md` and expanded `SECURITY.md` disclosure policy.
+- `TensorNameTooLong` error variant for tensor names exceeding 65535 bytes.
+
+### Fixed
+
+- Tensor encode now validates dimension count (≤32) and name length (≤65535 bytes) before u16 cast, preventing silent truncation.
 
 ### Changed
 
-- Attestation backend count: 3 → 4 (mock, nitro, sev-snp, tdx).
-- CI feature combinations: 5 → 6.
+- Attestation backend count: 2 → 4 (mock, nitro, sev-snp, tdx).
+- CI feature combinations: 5 → 7.
 
 ## [0.1.3] - 2026-02-08
 
@@ -86,6 +95,7 @@ Initial release.
 - Session retry with exponential backoff.
 - Measurement/PCR verification.
 
+[0.2.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.0...v0.1.1
