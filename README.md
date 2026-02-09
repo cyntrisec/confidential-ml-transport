@@ -2,6 +2,8 @@
 
 Attestation-bound encrypted tensor transport for confidential ML inference over VSock and TCP.
 
+> **Disclaimer:** This project is under development. All source code and features are not production ready.
+
 ## Quickstart
 
 Try it in 60 seconds — no project setup needed:
