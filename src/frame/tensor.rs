@@ -80,8 +80,16 @@ impl<'a> TensorRef<'a> {
     pub fn encode(&self, buf: &mut BytesMut) -> Result<(), FrameError> {
         self.validate()?;
 
+        if self.shape.len() > MAX_NDIMS as usize {
+            return Err(FrameError::ShapeOverflow);
+        }
         let ndims = self.shape.len() as u16;
         let name_bytes = self.name.as_bytes();
+        if name_bytes.len() > u16::MAX as usize {
+            return Err(FrameError::TensorNameTooLong {
+                len: name_bytes.len(),
+            });
+        }
         let name_len = name_bytes.len() as u16;
 
         // Sub-header: ndims(2 LE) + dtype(1) + shape(ndims*4 LE) + name_len(2 LE) + name + padding + data

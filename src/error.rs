@@ -28,6 +28,9 @@ pub enum FrameError {
     #[error("invalid tensor name: {0}")]
     InvalidTensorName(#[from] std::string::FromUtf8Error),
 
+    #[error("tensor name too long: {len} bytes (max 65535)")]
+    TensorNameTooLong { len: usize },
+
     #[error("incomplete tensor header")]
     IncompleteTensorHeader,
 
