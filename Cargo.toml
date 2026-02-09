@@ -29,7 +29,7 @@ hex = "0.4"
 subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
 tokio-vsock = { version = "0.7", optional = true }
-coset = { version = "0.3", optional = true }
+coset = { version = "0.4", optional = true }
 ciborium = { version = "0.2", optional = true }
 openssl = { version = "0.10", optional = true }
 aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
