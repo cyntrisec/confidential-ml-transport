@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "examples/nitro-inference"]
+members = [".", "examples/nitro-inference", "examples/hostile-host-demo"]
 
 [package]
 name = "confidential-ml-transport"

@@ -1,0 +1,104 @@
+{
+  "platform": {
+    "provider": "Azure",
+    "vm_sku": "Standard_DC4ads_v5",
+    "cpu": "AMD EPYC 7763 (Milan, Family 25h Model 1h) [SEV-SNP masked]",
+    "vcpus": 4,
+    "memory_gib": 16,
+    "security_type": "ConfidentialVM (SEV-SNP)",
+    "kernel": "6.8.0-1044-azure-fde",
+    "region": "eastus",
+    "zone": 2,
+    "date": "2026-02-10"
+  },
+  "tests": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0
+  },
+  "mode_a": {
+    "total_bytes": 15475,
+    "frames": [
+      {
+        "index": 0,
+        "msg_type": "Tensor",
+        "sequence": 0,
+        "payload_len": 44,
+        "encrypted": false
+      },
+      {
+        "index": 1,
+        "msg_type": "Tensor",
+        "sequence": 1,
+        "payload_len": 15392,
+        "encrypted": false
+      },
+      {
+        "index": 2,
+        "msg_type": "Shutdown",
+        "sequence": 2,
+        "payload_len": 0,
+        "encrypted": false
+      }
+    ],
+    "payload_entropy_bits_per_byte": 6.906534586114274,
+    "tensors_recoverable": true
+  },
+  "mode_b": {
+    "total_bytes": 15817,
+    "frames": [
+      {
+        "index": 0,
+        "msg_type": "Hello",
+        "sequence": 0,
+        "payload_len": 157,
+        "encrypted": false
+      },
+      {
+        "index": 1,
+        "msg_type": "Tensor",
+        "sequence": 0,
+        "payload_len": 60,
+        "encrypted": true
+      },
+      {
+        "index": 2,
+        "msg_type": "Tensor",
+        "sequence": 1,
+        "payload_len": 15408,
+        "encrypted": true
+      },
+      {
+        "index": 3,
+        "msg_type": "Shutdown",
+        "sequence": 2,
+        "payload_len": 16,
+        "encrypted": true
+      },
+      {
+        "index": 4,
+        "msg_type": "Hello",
+        "sequence": 0,
+        "payload_len": 65,
+        "encrypted": false
+      },
+      {
+        "index": 5,
+        "msg_type": "Hello",
+        "sequence": 1,
+        "payload_len": 33,
+        "encrypted": false
+      }
+    ],
+    "payload_entropy_bits_per_byte": 7.9883964826129095,
+    "tensors_recoverable": false
+  },
+  "comparison": {
+    "mode_a_bytes": 15475,
+    "mode_b_bytes": 15817,
+    "aead_overhead_bytes": 342,
+    "aead_overhead_pct": 2.210016155088853,
+    "mode_a_entropy": 6.906534586114274,
+    "mode_b_entropy": 7.9883964826129095
+  }
+}

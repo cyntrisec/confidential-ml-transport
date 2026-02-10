@@ -441,6 +441,14 @@ cargo +nightly fuzz run fuzz_handshake_resp fuzz/seed_corpus/fuzz_handshake_resp
 cargo run --example echo_server --features mock
 ```
 
+## Examples
+
+| Example | Description | Command |
+|---------|-------------|---------|
+| `echo_server` | Encrypted echo over TCP with mock attestation | `cargo run --example echo_server --features mock` |
+| [`hostile-host-demo`](examples/hostile-host-demo/) | A/B proof that SecureChannel stops a hostile relay from reading tensors ([threat model](examples/hostile-host-demo/README.md#threat-model)) | `cargo run --release -p hostile-host-demo` |
+| [`nitro-inference`](examples/nitro-inference/) | End-to-end confidential MiniLM-L6-v2 inference over SecureChannel | See [README](examples/nitro-inference/README.md) |
+
 ## Benchmarks
 
 Headline numbers (see [`benchmark_results/BENCHMARK_BRIEF.md`](benchmark_results/BENCHMARK_BRIEF.md) for full cross-environment results, SLO targets, and reproduction commands):
