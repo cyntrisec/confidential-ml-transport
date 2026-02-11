@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] - 2026-02-12
+
+### Fixed
+
+- **Double-SHA256 bug in TDX ECDSA signature verification** — `verify_ecdsa_signature()` pre-hashed the quote data with SHA-256 before passing it to OpenSSL's `verify_oneshot()`, which hashes again internally. Real TDX hardware signs `SHA256(header+body)` once, so verification always failed on real quotes. Synthetic tests masked the bug because `build_synthetic_tdx_quote()` had the same double-hash in the signing path. Both paths now pass raw data and let OpenSSL hash once.
+- **configfs-tsm entry name collision** — concurrent handshakes from the same process (e.g., control + data channels) used the same configfs-tsm entry name (`cmt_{pid}`), causing `EEXIST` on `create_dir`. Fixed with an `AtomicU64` counter for unique entry names (`cmt_{pid}_{counter}`).
+- Benchmark scripts now pass `--features mock` so they work on fresh clones.
 
 ### Added
 
@@ -18,9 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | 384KB throughput | 825 MB/s | 725 MB/s | 918 MB/s |
 | Overhead vs inference | <0.17% | <0.29% | <0.25% |
 
-### Fixed
-
-- Benchmark scripts now pass `--features mock` so they work on fresh clones.
+- Hostile-host relay capture demo example.
 
 ## [0.2.0] - 2026-02-09
 
@@ -112,6 +116,7 @@ Initial release.
 - Session retry with exponential backoff.
 - Measurement/PCR verification.
 
+[0.2.1]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.1...v0.1.2
