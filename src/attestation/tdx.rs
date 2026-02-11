@@ -488,16 +488,13 @@ fn verify_ecdsa_signature(
         AttestError::VerificationFailed(format!("failed to encode signature to DER: {e}"))
     })?;
 
-    // Hash the signed data (header + body) with SHA-256.
-    let digest = Sha256::digest(&quote[..signed_len]);
-
-    // Verify the signature.
+    // Verify the ECDSA signature over the raw signed data (header + body).
+    // OpenSSL's verify_oneshot will hash the data internally with SHA-256.
     let mut verifier = openssl::sign::Verifier::new(openssl::hash::MessageDigest::sha256(), &pkey)
         .map_err(|e| AttestError::VerificationFailed(format!("failed to create verifier: {e}")))?;
 
-    // For ECDSA, we verify the pre-hashed data using the DER signature directly.
     let valid = verifier
-        .verify_oneshot(&der_sig, &digest)
+        .verify_oneshot(&der_sig, &quote[..signed_len])
         .map_err(|e| AttestError::VerificationFailed(format!("ECDSA verification error: {e}")))?;
 
     if !valid {
@@ -587,13 +584,12 @@ pub fn build_synthetic_tdx_quote(
     let ec_key = openssl::ec::EcKey::generate(&group).expect("keygen");
     let pkey = openssl::pkey::PKey::from_ec_key(ec_key.clone()).expect("pkey");
 
-    // Hash the signed data.
-    let digest = Sha256::digest(&quote[..signed_len]);
-
-    // Sign.
+    // Sign the raw data (header + body). OpenSSL hashes it internally with SHA-256.
     let mut signer =
         openssl::sign::Signer::new(openssl::hash::MessageDigest::sha256(), &pkey).expect("signer");
-    let der_sig = signer.sign_oneshot_to_vec(&digest).expect("sign");
+    let der_sig = signer
+        .sign_oneshot_to_vec(&quote[..signed_len])
+        .expect("sign");
 
     // Parse DER signature back to (r, s) raw components.
     let ecdsa_sig = openssl::ecdsa::EcdsaSig::from_der(&der_sig).expect("parse DER sig");
