@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **3-cloud transport benchmark comparison** — benchmarked on AWS m6i.xlarge (Intel Xeon, non-confidential), Azure DC4ads_v5 (AMD EPYC Milan, SEV-SNP), and GCP c3-standard-4 (Intel Sapphire Rapids, TDX). Transport crypto overhead is <0.3% of inference time on all platforms including real confidential VMs.
+
+| Metric | AWS m6i (none) | Azure DC4ads_v5 (SEV-SNP) | GCP c3-standard-4 (TDX) |
+|---|---|---|---|
+| Handshake p50 | 139 us | 168 us | 143 us |
+| 1536B RTT p50 | 33 us | 124 us | 108 us |
+| 384KB throughput | 825 MB/s | 725 MB/s | 918 MB/s |
+| Overhead vs inference | <0.17% | <0.29% | <0.25% |
+
+### Fixed
+
+- Benchmark scripts now pass `--features mock` so they work on fresh clones.
+
 ## [0.2.0] - 2026-02-09
 
 ### Added
