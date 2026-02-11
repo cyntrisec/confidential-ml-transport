@@ -1,5 +1,10 @@
 # confidential-ml-transport
 
+[![Crates.io](https://img.shields.io/crates/v/confidential-ml-transport.svg)](https://crates.io/crates/confidential-ml-transport)
+[![docs.rs](https://docs.rs/confidential-ml-transport/badge.svg)](https://docs.rs/confidential-ml-transport)
+[![CI](https://github.com/cyntrisec/confidential-ml-transport/actions/workflows/ci.yml/badge.svg)](https://github.com/cyntrisec/confidential-ml-transport/actions/workflows/ci.yml)
+[![License: MIT/Apache-2.0](https://img.shields.io/crates/l/confidential-ml-transport.svg)](LICENSE-MIT)
+
 Attestation-bound encrypted tensor transport for confidential ML inference over VSock and TCP.
 
 > **Disclaimer:** This project is under development. All source code and features are not production ready.
