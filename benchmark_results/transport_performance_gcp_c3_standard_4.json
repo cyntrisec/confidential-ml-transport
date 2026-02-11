@@ -1,0 +1,110 @@
+{
+  "benchmark": "transport_performance",
+  "description": "Comprehensive transport layer performance: handshake, steady-state latency, sustained throughput",
+  "date": "2026-02-11T12:59:45Z",
+  "methodology": {
+    "cpu": "Intel Sapphire Rapids (4th Gen Xeon) [TDX confidential VM]",
+    "kernel": "6.14.0-1021-gcp",
+    "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+    "cpus": "4",
+    "governor": "unknown",
+    "memory": "14Gi",
+    "vm_sku": "c3-standard-4",
+    "cloud": "GCP",
+    "region": "us-central1-a",
+    "security_type": "Intel TDX Confidential VM",
+    "transport": "tokio::io::duplex (in-process, no network)",
+    "attestation": "MockProvider / MockVerifier",
+    "cipher": "ChaCha20-Poly1305 (AEAD)",
+    "key_agreement": "X25519 + HKDF-SHA256",
+    "criterion_sample_size": "100 (default)"
+  },
+  "handshake": {
+    "description": "Full 3-message handshake over tokio::io::duplex (mock attestation)",
+    "p50_ns": 142905.82857142857,
+    "p95_ns": 147957.10714285713,
+    "p99_ns": 155189.42857142858,
+    "ci_lower_ns": 142733.0060150376,
+    "ci_upper_ns": 143032.1173469388
+  },
+  "steady_state_latency": [
+    {
+      "label": "1536b_embedding",
+      "size_bytes": 1536,
+      "plaintext_duplex_ns": 84411.60026872194,
+      "secure_channel_ns": 107962.01606897904,
+      "overhead_pct": 27.9,
+      "p50_ns": 107985.15912208505,
+      "p95_ns": 121234.37099811676,
+      "p99_ns": 126513.99770904926,
+      "ci_lower_ns": 104460.51481481481,
+      "ci_upper_ns": 109543.01257309942
+    },
+    {
+      "label": "4k_activation",
+      "size_bytes": 4096,
+      "plaintext_duplex_ns": 85396.23171921921,
+      "secure_channel_ns": 124739.37856934732,
+      "overhead_pct": 46.07,
+      "p50_ns": 124787.24431818182,
+      "p95_ns": 139873.1589285714,
+      "p99_ns": 150324.08333333334,
+      "ci_lower_ns": 122167.875,
+      "ci_upper_ns": 125792.6875
+    },
+    {
+      "label": "384k_hidden",
+      "size_bytes": 393216,
+      "plaintext_duplex_ns": 214318.9504347826,
+      "secure_channel_ns": 1855340.7357102432,
+      "overhead_pct": 765.69,
+      "p50_ns": 1855713.5789473683,
+      "p95_ns": 1872252.92,
+      "p99_ns": 2067671.0,
+      "ci_lower_ns": 1850863.0,
+      "ci_upper_ns": 1861009.8666666667
+    }
+  ],
+  "sustained_throughput": [
+    {
+      "label": "1536b_embedding",
+      "size_bytes": 1536,
+      "burst_count": 2730,
+      "plaintext_mbps": 3044.44,
+      "secure_channel_mbps": 403.33,
+      "throughput_overhead_pct": 86.8,
+      "secure_channel_mbps_ci_lower": 395.54,
+      "secure_channel_mbps_ci_upper": 406.28
+    },
+    {
+      "label": "4k_activation",
+      "size_bytes": 4096,
+      "burst_count": 1024,
+      "plaintext_mbps": 4583.64,
+      "secure_channel_mbps": 604.22,
+      "throughput_overhead_pct": 86.8,
+      "secure_channel_mbps_ci_lower": 600.56,
+      "secure_channel_mbps_ci_upper": 610.29
+    },
+    {
+      "label": "384k_hidden",
+      "size_bytes": 393216,
+      "burst_count": 10,
+      "plaintext_mbps": 5173.54,
+      "secure_channel_mbps": 918.26,
+      "throughput_overhead_pct": 82.3,
+      "secure_channel_mbps_ci_lower": 859.17,
+      "secure_channel_mbps_ci_upper": 928.1
+    },
+    {
+      "label": "1m_large",
+      "size_bytes": 1048576,
+      "burst_count": 4,
+      "plaintext_mbps": 4697.41,
+      "secure_channel_mbps": 784.88,
+      "throughput_overhead_pct": 83.3,
+      "secure_channel_mbps_ci_lower": 772.1,
+      "secure_channel_mbps_ci_upper": 831.26
+    }
+  ]
+}
