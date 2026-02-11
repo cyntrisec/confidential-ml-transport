@@ -46,15 +46,15 @@ echo "System: $(echo "$SYSINFO_JSON" | python3 -c "import json,sys; d=json.load(
 
 echo ""
 echo "=== Running handshake benchmark ==="
-cargo bench --bench handshake -p confidential-ml-transport "${BENCH_ARGS[@]}"
+cargo bench --bench handshake --features mock -p confidential-ml-transport "${BENCH_ARGS[@]}"
 
 echo ""
 echo "=== Running confidential overhead benchmark ==="
-cargo bench --bench confidential_overhead -p confidential-ml-transport "${BENCH_ARGS[@]}"
+cargo bench --bench confidential_overhead --features mock -p confidential-ml-transport "${BENCH_ARGS[@]}"
 
 echo ""
 echo "=== Running throughput benchmark ==="
-cargo bench --bench throughput -p confidential-ml-transport "${BENCH_ARGS[@]}"
+cargo bench --bench throughput --features mock -p confidential-ml-transport "${BENCH_ARGS[@]}"
 
 echo ""
 echo "=== Collecting results ==="

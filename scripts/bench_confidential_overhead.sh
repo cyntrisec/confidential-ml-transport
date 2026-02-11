@@ -24,7 +24,7 @@ if [[ "${1:-}" == "--quick" ]]; then
 fi
 
 echo "=== Running confidential overhead benchmark ==="
-cargo bench --bench confidential_overhead -p confidential-ml-transport "${BENCH_ARGS[@]}"
+cargo bench --bench confidential_overhead --features mock -p confidential-ml-transport "${BENCH_ARGS[@]}"
 
 echo ""
 echo "=== Collecting results ==="
