@@ -451,17 +451,28 @@ cargo run --example echo_server --features mock
 
 ## Benchmarks
 
-Headline numbers (see [`benchmark_results/BENCHMARK_BRIEF.md`](benchmark_results/BENCHMARK_BRIEF.md) for full cross-environment results, SLO targets, and reproduction commands):
+### Cross-Provider Comparison
+
+Benchmarked on 3 cloud platforms — including 2 real confidential VMs with hardware memory encryption. Transport crypto overhead is **<0.3% of inference time on all platforms**.
+
+| Metric | AWS m6i.xlarge | Azure DC4ads_v5 | GCP c3-standard-4 |
+|--------|----------------|-----------------|---------------------|
+| **CPU** | Intel Xeon 8375C | AMD EPYC 7763 (Milan) | Intel Sapphire Rapids |
+| **Security** | Standard VM | SEV-SNP | TDX |
+| Handshake p50 | **139 µs** | 168 µs | 143 µs |
+| 1536B RTT p50 | **33 µs** | 124 µs | 108 µs |
+| 4KB throughput | **751 MB/s** | 618 MB/s | 604 MB/s |
+| 384KB throughput | 825 MB/s | 725 MB/s | **918 MB/s** |
+| Overhead vs 100ms inference | <0.17% | <0.29% | <0.25% |
+
+See [`benchmark_results/cross_provider_comparison.md`](benchmark_results/cross_provider_comparison.md) for detailed analysis.
+
+### Primitives
 
 | Metric | Value | Environment |
 |--------|-------|-------------|
-| Handshake (3-msg, mock attestation) | **139 µs** p50 | AWS m6i.xlarge |
-| Steady-state RTT (1536 B embedding) | **33 µs** p50 | AWS (established session) |
-| Throughput (4 KB, secure) | **482–751 MB/s** | Local / AWS |
 | Frame codec roundtrip (4 KB) | **320 ns** (12 GiB/s) | Local |
 | ChaCha20-Poly1305 seal (4 KB) | **6.2 µs** (630 MB/s) | Local |
-
-Cross-environment handshake p50: 139 µs (AWS), 168 µs (Azure SEV-SNP), 198 µs (local dev). See BENCHMARK_BRIEF for full comparison.
 
 ```bash
 # Run all benchmarks
