@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
@@ -6,6 +7,9 @@ use sha2::{Digest, Sha256};
 use super::types::{AttestationDocument, VerifiedAttestation};
 use super::{AttestationProvider, AttestationVerifier};
 use crate::error::AttestError;
+
+/// Global counter for unique configfs-tsm report entry names.
+static TSM_ENTRY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Wire format marker for TDX attestation documents.
 const TDX_MARKER: &[u8; 12] = b"TDX_V1\0\0\0\0\0\0";
@@ -116,7 +120,7 @@ impl AttestationProvider for TdxProvider {
         }
 
         // Create a unique report entry under configfs-tsm.
-        let entry_name = format!("cmt_{}", std::process::id());
+        let entry_name = format!("cmt_{}_{}", std::process::id(), TSM_ENTRY_COUNTER.fetch_add(1, Ordering::Relaxed));
         let entry_path = self.tsm_path.join(&entry_name);
 
         // Clean up any stale entry from a previous run.
