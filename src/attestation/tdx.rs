@@ -120,7 +120,11 @@ impl AttestationProvider for TdxProvider {
         }
 
         // Create a unique report entry under configfs-tsm.
-        let entry_name = format!("cmt_{}_{}", std::process::id(), TSM_ENTRY_COUNTER.fetch_add(1, Ordering::Relaxed));
+        let entry_name = format!(
+            "cmt_{}_{}",
+            std::process::id(),
+            TSM_ENTRY_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
         let entry_path = self.tsm_path.join(&entry_name);
 
         // Clean up any stale entry from a previous run.
