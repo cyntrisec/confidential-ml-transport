@@ -122,25 +122,17 @@ async fn tapping_relay(left: DuplexStream, right: DuplexStream) -> RelayCapture 
     let bwd_capture = Arc::new(Mutex::new(Vec::new()));
 
     let fwd_cap = fwd_capture.clone();
-    let fwd = tokio::spawn(async move {
-        relay_one_direction(left_read, right_write, fwd_cap).await
-    });
+    let fwd =
+        tokio::spawn(async move { relay_one_direction(left_read, right_write, fwd_cap).await });
 
     let bwd_cap = bwd_capture.clone();
-    let bwd = tokio::spawn(async move {
-        relay_one_direction(right_read, left_write, bwd_cap).await
-    });
+    let bwd =
+        tokio::spawn(async move { relay_one_direction(right_read, left_write, bwd_cap).await });
 
     let (fwd_result, bwd_result) = tokio::join!(fwd, bwd);
 
-    let fwd_error = fwd_result
-        .ok()
-        .and_then(|r| r.err())
-        .map(|e| e.to_string());
-    let bwd_error = bwd_result
-        .ok()
-        .and_then(|r| r.err())
-        .map(|e| e.to_string());
+    let fwd_error = fwd_result.ok().and_then(|r| r.err()).map(|e| e.to_string());
+    let bwd_error = bwd_result.ok().and_then(|r| r.err()).map(|e| e.to_string());
 
     let fwd_data = Arc::try_unwrap(fwd_capture).unwrap().into_inner();
     let bwd_data = Arc::try_unwrap(bwd_capture).unwrap().into_inner();
@@ -509,10 +501,7 @@ fn print_mode_b(fwd: &[u8], bwd: &[u8]) {
 
     handshake_frames.sort_by_key(|(info, _)| info.sequence);
 
-    let all_frames: Vec<_> = handshake_frames
-        .iter()
-        .chain(data_frames.iter())
-        .collect();
+    let all_frames: Vec<_> = handshake_frames.iter().chain(data_frames.iter()).collect();
 
     println!("Frames intercepted:");
     for (i, (info, _)) in all_frames.iter().enumerate() {
@@ -642,10 +631,7 @@ fn print_comparison(captured_a: &[u8], captured_b_fwd: &[u8], captured_b_bwd: &[
     println!();
     println!("--- COMPARISON ---");
     println!();
-    println!(
-        "                        {:<16}{}",
-        "Mode A", "Mode B"
-    );
+    println!("                        {:<16}{}", "Mode A", "Mode B");
     println!(
         "Bytes captured:         {:<16}{}",
         captured_a.len(),
@@ -676,10 +662,7 @@ fn print_comparison(captured_a: &[u8], captured_b_fwd: &[u8], captured_b_bwd: &[
         format!("{:.2} b/byte", entropy_a),
         entropy_b
     );
-    println!(
-        "AEAD overhead:          {:<16}{}",
-        "--", overhead
-    );
+    println!("AEAD overhead:          {:<16}{}", "--", overhead);
 }
 
 // ---------------------------------------------------------------------------
