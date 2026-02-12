@@ -12,6 +12,9 @@ pub mod sev;
 #[cfg(feature = "tdx")]
 pub mod tdx;
 
+#[cfg(feature = "azure-sev-snp")]
+pub mod azure_sev;
+
 use async_trait::async_trait;
 
 use crate::error::AttestError;

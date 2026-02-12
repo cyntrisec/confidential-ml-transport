@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-12
+
+### Added
+
+- **`SecureChannel::peer_attestation()` accessor** — after a successful handshake, the initiator (client) can now retrieve the responder's `VerifiedAttestation` via `channel.peer_attestation()`. This allows callers to extract `user_data`, `public_key`, and `measurements` from the peer's attestation document without re-parsing. Returns `None` for the responder (one-way attestation).
+- **Azure SEV-SNP attestation backend** — `AzureSevSnpProvider` and `AzureSevSnpVerifier` behind the `azure-sev-snp` feature flag. Uses `az-cvm-vtpm` for vTPM-based attestation on Azure Confidential VMs (DCesv5/ECesv5). Extracts SNP report, verifies VCEK/VLEK signatures, and maps runtime_data hash to measurements.
+- Re-exported `AttestationDocument` and `VerifiedAttestation` from the crate root for convenience.
+
+### Changed
+
+- Attestation backend count: 4 → 5 (mock, nitro, sev-snp, tdx, azure-sev-snp).
+
 ## [0.2.1] - 2026-02-12
 
 ### Fixed
@@ -116,6 +128,7 @@ Initial release.
 - Session retry with exponential backoff.
 - Measurement/PCR verification.
 
+[0.3.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.2...v0.1.3

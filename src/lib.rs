@@ -30,7 +30,7 @@ pub use session::channel::{Message, SecureChannel};
 pub use session::retry::RetryPolicy;
 pub use session::{SessionConfig, SessionConfigBuilder};
 
-pub use attestation::types::ExpectedMeasurements;
+pub use attestation::types::{AttestationDocument, ExpectedMeasurements, VerifiedAttestation};
 pub use attestation::{AttestationProvider, AttestationVerifier};
 
 #[cfg(feature = "mock")]
@@ -44,3 +44,6 @@ pub use attestation::sev::{SevSnpProvider, SevSnpVerifier};
 
 #[cfg(feature = "tdx")]
 pub use attestation::tdx::{TdxProvider, TdxVerifier};
+
+#[cfg(feature = "azure-sev-snp")]
+pub use attestation::azure_sev::{AzureSevSnpProvider, AzureSevSnpVerifier};

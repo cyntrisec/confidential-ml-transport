@@ -4,6 +4,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use std::future::Future;
 
+use crate::attestation::types::VerifiedAttestation;
 use crate::attestation::{AttestationProvider, AttestationVerifier};
 use crate::crypto::seal::{OpeningContext, SealingContext};
 use crate::error::{Error, SessionError};
@@ -52,6 +53,7 @@ pub struct SecureChannel<T> {
     codec: FrameCodec,
     #[allow(dead_code)]
     config: SessionConfig,
+    peer_attestation: Option<VerifiedAttestation>,
 }
 
 impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
@@ -77,6 +79,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
 
         let sealer = SealingContext::new(&result.send_key, result.session_id);
         let opener = OpeningContext::new(&result.recv_key, result.session_id);
+        let peer_attestation = result.peer_attestation;
 
         Ok(Self {
             transport,
@@ -85,6 +88,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             read_buf: result.residual,
             codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
+            peer_attestation,
         })
     }
 
@@ -135,6 +139,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
 
         let sealer = SealingContext::new(&result.send_key, result.session_id);
         let opener = OpeningContext::new(&result.recv_key, result.session_id);
+        let peer_attestation = result.peer_attestation;
 
         Ok(Self {
             transport,
@@ -143,7 +148,17 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             read_buf: result.residual,
             codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
+            peer_attestation,
         })
+    }
+
+    /// Return the peer's verified attestation, if available.
+    ///
+    /// For the initiator (client), this contains the responder's attestation
+    /// including `user_data`, `public_key`, and `measurements`.
+    /// For the responder (server), this is `None` (one-way attestation).
+    pub fn peer_attestation(&self) -> Option<&VerifiedAttestation> {
+        self.peer_attestation.as_ref()
     }
 
     /// Encrypt plaintext and construct a frame. The sealer's internal sequence

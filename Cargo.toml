@@ -3,7 +3,7 @@ members = [".", "examples/nitro-inference", "examples/hostile-host-demo"]
 
 [package]
 name = "confidential-ml-transport"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Attestation-bound encrypted tensor transport for confidential ML inference"
@@ -35,6 +35,9 @@ openssl = { version = "0.10", optional = true }
 aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
 serde_bytes = { version = "0.11", optional = true }
 sev = { version = "7", default-features = false, features = ["snp", "openssl"], optional = true }
+az-cvm-vtpm = { version = "0.8", optional = true }
+tss-esapi = { version = "7", optional = true }
+serde_json = { version = "1", optional = true }
 
 [features]
 default = ["tcp"]
@@ -43,6 +46,7 @@ tcp = []
 vsock = ["dep:tokio-vsock"]
 nitro = ["dep:coset", "dep:ciborium", "dep:openssl", "dep:aws-nitro-enclaves-nsm-api", "dep:serde_bytes"]
 sev-snp = ["dep:sev", "dep:openssl"]
+azure-sev-snp = ["dep:az-cvm-vtpm", "dep:tss-esapi", "dep:sev", "dep:openssl", "dep:serde_json"]
 tdx = ["dep:openssl"]
 
 [dev-dependencies]
