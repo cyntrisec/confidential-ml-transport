@@ -28,7 +28,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev libtss2-dev
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -45,10 +45,11 @@ jobs:
           - --no-default-features --features "tcp,mock"
           - --no-default-features --features sev-snp
           - --no-default-features --features tdx
+          - --no-default-features --features azure-sev-snp
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev libtss2-dev
       - uses: Swatinem/rust-cache@v2
       - run: cargo test ${{ matrix.features }}
 
@@ -74,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
-      - run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev libtss2-dev
       - run: cargo install cargo-fuzz
       - uses: Swatinem/rust-cache@v2
         with:
@@ -93,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev libtss2-dev
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --no-deps --all-features
         env:
