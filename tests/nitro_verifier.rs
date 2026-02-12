@@ -9,7 +9,7 @@ use confidential_ml_transport::attestation::types::AttestationDocument;
 use confidential_ml_transport::error::AttestError;
 use confidential_ml_transport::session::channel::{Message, SecureChannel};
 use confidential_ml_transport::session::SessionConfig;
-use confidential_ml_transport::{AttestationProvider, NitroVerifier};
+use confidential_ml_transport::{AttestationProvider, MockProvider, MockVerifier, NitroVerifier};
 use openssl::asn1::Asn1Time;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
@@ -172,11 +172,13 @@ async fn nitro_verifier_handshake_integration() {
     let config = SessionConfig::default();
 
     let server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &provider, config).await
+        let server_verifier = MockVerifier::new();
+        SecureChannel::accept_with_attestation(server_io, &provider, &server_verifier, config).await
     });
 
+    let client_provider = MockProvider::new();
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &verifier, client_config)
+    let mut client = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config)
         .await
         .expect("client handshake should succeed");
 

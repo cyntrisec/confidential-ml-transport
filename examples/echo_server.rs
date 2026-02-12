@@ -21,9 +21,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
         stream.set_nodelay(true).unwrap();
 
+        let provider = MockProvider::new();
         let verifier = MockVerifier::new();
         let mut channel =
-            SecureChannel::connect_with_attestation(stream, &verifier, SessionConfig::default())
+            SecureChannel::connect_with_attestation(stream, &provider, &verifier, SessionConfig::default())
                 .await
                 .unwrap();
 
@@ -53,8 +54,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("accepted connection from {peer_addr}");
 
     let provider = MockProvider::new();
+    let verifier = MockVerifier::new();
     let mut channel =
-        SecureChannel::accept_with_attestation(stream, &provider, SessionConfig::default()).await?;
+        SecureChannel::accept_with_attestation(stream, &provider, &verifier, SessionConfig::default()).await?;
 
     println!("[server] handshake complete");
 

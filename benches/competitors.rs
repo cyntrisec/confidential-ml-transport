@@ -131,8 +131,8 @@ fn bench_handshake(c: &mut Criterion) {
                 let config = SessionConfig::default();
 
                 let (s, c) = tokio::join!(
-                    SecureChannel::accept_with_attestation(server, &provider, config.clone()),
-                    SecureChannel::connect_with_attestation(client, &verifier, config),
+                    SecureChannel::accept_with_attestation(server, &provider, &verifier, config.clone()),
+                    SecureChannel::connect_with_attestation(client, &provider, &verifier, config),
                 );
                 black_box((s.unwrap(), c.unwrap()));
             });
@@ -271,8 +271,8 @@ fn bench_round_trip(c: &mut Criterion) {
                     let config = SessionConfig::default();
 
                     let (s, c) = tokio::join!(
-                        SecureChannel::accept_with_attestation(server, &provider, config.clone()),
-                        SecureChannel::connect_with_attestation(client, &verifier, config),
+                        SecureChannel::accept_with_attestation(server, &provider, &verifier, config.clone()),
+                        SecureChannel::connect_with_attestation(client, &provider, &verifier, config),
                     );
 
                     let mut server_ch = s.unwrap();

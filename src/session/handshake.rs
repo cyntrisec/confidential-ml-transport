@@ -23,7 +23,8 @@ pub struct HandshakeResult {
     pub recv_key: SymmetricKey,
     /// Session ID derived from the transcript (domain-separated from key material).
     pub session_id: [u8; 32],
-    /// The verified attestation from the peer (initiator gets server's attestation).
+    /// The verified attestation from the peer.
+    /// Both initiator and responder receive this (mutual attestation).
     pub peer_attestation: Option<VerifiedAttestation>,
     /// Residual bytes read from the transport but not consumed by the handshake.
     /// Must be prepended to the channel's read buffer.
@@ -32,11 +33,20 @@ pub struct HandshakeResult {
 
 // -- Wire helpers --
 
-fn encode_initiator_hello(public_key: &[u8; 32], nonce: &[u8; 32]) -> Bytes {
-    let mut buf = BytesMut::with_capacity(1 + 32 + 32);
+/// Encode an initiator hello message (v3: includes attestation document).
+///
+/// Wire format: `[1:u8 | pk:32B | nonce:32B | doc_len:4B | attestation_doc:var]`
+fn encode_initiator_hello(
+    public_key: &[u8; 32],
+    nonce: &[u8; 32],
+    attestation_doc: &[u8],
+) -> Bytes {
+    let mut buf = BytesMut::with_capacity(1 + 32 + 32 + 4 + attestation_doc.len());
     buf.put_u8(1); // message number
     buf.put_slice(public_key);
     buf.put_slice(nonce);
+    buf.put_u32(attestation_doc.len() as u32);
+    buf.put_slice(attestation_doc);
     buf.freeze()
 }
 
@@ -61,45 +71,33 @@ fn encode_confirmation(confirmation_hash: &[u8; 32]) -> Bytes {
     buf.freeze()
 }
 
-fn parse_initiator_hello(payload: &[u8]) -> Result<([u8; 32], [u8; 32]), SessionError> {
-    const EXPECTED_LEN: usize = 1 + 32 + 32;
-    if payload.len() != EXPECTED_LEN {
-        return Err(SessionError::HandshakeFailed(format!(
-            "initiator hello: expected {EXPECTED_LEN} bytes, got {}",
-            payload.len()
-        )));
-    }
-    if payload[0] != 1 {
-        return Err(SessionError::UnexpectedMessage {
-            expected: "initiator_hello (1)",
-            actual: format!("message type {}", payload[0]),
-        });
-    }
-    let mut pk = [0u8; 32];
-    let mut nonce = [0u8; 32];
-    pk.copy_from_slice(&payload[1..33]);
-    nonce.copy_from_slice(&payload[33..65]);
-    Ok((pk, nonce))
-}
-
 /// Maximum attestation document size accepted during handshake (64 KiB).
 ///
 /// Real Nitro attestation documents are typically <16 KiB. This cap prevents an
 /// adversary from sending a multi-megabyte document to exhaust memory.
 const MAX_ATTESTATION_DOC_SIZE: usize = 64 * 1024;
 
-fn parse_responder_hello(
+/// Parse a hello message containing a public key, nonce, and attestation document.
+///
+/// Used for both initiator (msg_num=1) and responder (msg_num=2) hellos in v3.
+fn parse_hello_with_attestation(
     payload: &[u8],
+    expected_msg_num: u8,
+    role_name: &str,
 ) -> Result<([u8; 32], [u8; 32], AttestationDocument), SessionError> {
     const MIN_LEN: usize = 1 + 32 + 32 + 4;
     if payload.len() < MIN_LEN {
-        return Err(SessionError::HandshakeFailed(
-            "responder hello too short".into(),
-        ));
+        return Err(SessionError::HandshakeFailed(format!(
+            "{role_name} hello too short"
+        )));
     }
-    if payload[0] != 2 {
+    if payload[0] != expected_msg_num {
         return Err(SessionError::UnexpectedMessage {
-            expected: "responder_hello (2)",
+            expected: if expected_msg_num == 1 {
+                "initiator_hello (1)"
+            } else {
+                "responder_hello (2)"
+            },
             actual: format!("message type {}", payload[0]),
         });
     }
@@ -116,15 +114,27 @@ fn parse_responder_hello(
     }
     let expected_total = MIN_LEN
         .checked_add(doc_len)
-        .ok_or_else(|| SessionError::HandshakeFailed("responder hello length overflow".into()))?;
+        .ok_or_else(|| SessionError::HandshakeFailed(format!("{role_name} hello length overflow")))?;
     if payload.len() != expected_total {
         return Err(SessionError::HandshakeFailed(format!(
-            "responder hello: expected {expected_total} bytes, got {}",
+            "{role_name} hello: expected {expected_total} bytes, got {}",
             payload.len()
         )));
     }
     let doc = AttestationDocument::new(cursor[..doc_len].to_vec());
     Ok((pk, nonce, doc))
+}
+
+fn parse_initiator_hello(
+    payload: &[u8],
+) -> Result<([u8; 32], [u8; 32], AttestationDocument), SessionError> {
+    parse_hello_with_attestation(payload, 1, "initiator")
+}
+
+fn parse_responder_hello(
+    payload: &[u8],
+) -> Result<([u8; 32], [u8; 32], AttestationDocument), SessionError> {
+    parse_hello_with_attestation(payload, 2, "responder")
 }
 
 fn parse_confirmation(payload: &[u8]) -> Result<[u8; 32], SessionError> {
@@ -169,6 +179,38 @@ fn derive_session_id(transcript_hash: &[u8; 32]) -> Result<[u8; 32], crate::erro
     Ok(session_id)
 }
 
+/// Verify an attestation document: check signature, public key binding, and measurements.
+fn verify_attestation(
+    verified: &VerifiedAttestation,
+    peer_pk_bytes: &[u8; 32],
+    expected_measurements: Option<&ExpectedMeasurements>,
+    role: &str,
+) -> Result<(), crate::error::Error> {
+    // Verify the attestation binds the peer's public key (mandatory).
+    match verified.public_key {
+        Some(ref att_pk) => {
+            if att_pk.as_slice() != peer_pk_bytes.as_slice() {
+                return Err(AttestError::PublicKeyMismatch.into());
+            }
+        }
+        None => {
+            return Err(AttestError::MissingField("public_key".into()).into());
+        }
+    }
+
+    // Verify measurements if expected values are provided.
+    if let Some(expected) = expected_measurements {
+        expected.verify(&verified.measurements)?;
+        tracing::info!(
+            role,
+            expected_count = expected.values.len(),
+            "measurement verification passed"
+        );
+    }
+
+    Ok(())
+}
+
 // -- Transport helpers --
 
 async fn send_frame<T: AsyncWrite + Unpin>(
@@ -189,7 +231,7 @@ async fn send_frame<T: AsyncWrite + Unpin>(
 
 /// Maximum read buffer size during handshake.
 ///
-/// Handshake messages are small (initiator hello ~65B, responder hello ~65B + attestation doc,
+/// Handshake messages are small (initiator/responder hello ~69B + attestation doc,
 /// confirmation ~33B). The attestation doc is the largest variable component (typically <16 KB
 /// for Nitro/SEV-SNP). We cap at `MAX_PAYLOAD_SIZE + HEADER_SIZE + margin` to match the channel's
 /// strategy, but in practice handshake reads should never approach this limit.
@@ -249,11 +291,16 @@ fn validate_handshake_frame(
 
 /// Run the initiator (client) side of the handshake.
 ///
+/// In v3 (mutual attestation), the initiator sends its own attestation document
+/// in Msg1 and verifies the responder's attestation in Msg2. Both sides receive
+/// `peer_attestation: Some(verified)`.
+///
 /// Individual frame reads are not independently timed; the caller is expected
 /// to wrap this function in a `tokio::time::timeout` (which `SecureChannel`
 /// does via `SessionConfig::handshake_timeout`).
 pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
     transport: &mut T,
+    provider: &dyn AttestationProvider,
     verifier: &dyn AttestationVerifier,
     expected_measurements: Option<&ExpectedMeasurements>,
 ) -> Result<HandshakeResult, crate::error::Error> {
@@ -262,53 +309,48 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
     rand::thread_rng().fill(&mut nonce);
     let pk_bytes = keypair.public.to_bytes();
 
-    // Step 1: Send initiator hello (seq=0).
-    let hello = Frame::hello(0, encode_initiator_hello(&pk_bytes, &nonce));
+    // Generate our attestation binding our public key.
+    let our_att_doc = provider
+        .attest(None, Some(&nonce), Some(&pk_bytes))
+        .await
+        .map_err(|e| {
+            tracing::warn!("initiator attestation generation failed: {e}");
+            SessionError::HandshakeFailed("initiator attestation generation failed".into())
+        })?;
+
+    // Step 1: Send initiator hello with attestation (seq=0).
+    let hello = Frame::hello(
+        0,
+        encode_initiator_hello(&pk_bytes, &nonce, &our_att_doc.raw),
+    );
     send_frame(transport, hello).await?;
+
+    let init_att_hash: [u8; 32] = Sha256::digest(&our_att_doc.raw).into();
 
     // Step 2: Receive responder hello (expect seq=0).
     let mut read_buf = BytesMut::with_capacity(4096);
     let resp_frame = recv_frame(transport, &mut read_buf).await?;
     validate_handshake_frame(&resp_frame, FrameType::Hello, 0)?;
 
-    let (resp_pk_bytes, resp_nonce, att_doc) = parse_responder_hello(&resp_frame.payload)?;
+    let (resp_pk_bytes, resp_nonce, resp_att_doc) = parse_responder_hello(&resp_frame.payload)?;
 
-    // Step 3: Verify attestation.
-    let verified = verifier.verify(&att_doc).await.map_err(|e| {
-        tracing::warn!("attestation verification failed: {e}");
+    // Step 3: Verify responder's attestation.
+    let verified = verifier.verify(&resp_att_doc).await.map_err(|e| {
+        tracing::warn!("responder attestation verification failed: {e}");
         SessionError::HandshakeFailed("attestation verification failed".into())
     })?;
 
     tracing::info!(
         document_hash = hex::encode(verified.document_hash),
         measurement_count = verified.measurements.len(),
-        "attestation verification succeeded"
+        "responder attestation verification succeeded"
     );
     tracing::debug!(
         measurements = ?verified.measurements.iter().map(|(k, v)| (k, hex::encode(v))).collect::<Vec<_>>(),
         "peer attestation measurements"
     );
 
-    // Verify the attestation binds the responder's public key (mandatory).
-    match verified.public_key {
-        Some(ref att_pk) => {
-            if att_pk.as_slice() != resp_pk_bytes.as_slice() {
-                return Err(AttestError::PublicKeyMismatch.into());
-            }
-        }
-        None => {
-            return Err(AttestError::MissingField("public_key".into()).into());
-        }
-    }
-
-    // Verify measurements if expected values are provided.
-    if let Some(expected) = expected_measurements {
-        expected.verify(&verified.measurements)?;
-        tracing::info!(
-            expected_count = expected.values.len(),
-            "measurement verification passed"
-        );
-    }
+    verify_attestation(&verified, &resp_pk_bytes, expected_measurements, "initiator")?;
 
     // Combine nonces.
     let mut combined_nonce = [0u8; 32];
@@ -316,9 +358,10 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
         combined_nonce[i] = nonce[i] ^ resp_nonce[i];
     }
 
-    // Compute transcript and derive keys.
+    // Compute transcript binding both attestation hashes and derive keys.
     let resp_pk = x25519_dalek::PublicKey::from(resp_pk_bytes);
     let transcript_hash = transcript::compute_transcript(
+        &init_att_hash,
         &verified.document_hash,
         &pk_bytes,
         &resp_pk_bytes,
@@ -347,19 +390,46 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
 
 /// Run the responder (server) side of the handshake.
 ///
+/// In v3 (mutual attestation), the responder verifies the initiator's attestation
+/// from Msg1 and sends its own attestation in Msg2. Both sides receive
+/// `peer_attestation: Some(verified)`.
+///
 /// Individual frame reads are not independently timed; the caller is expected
 /// to wrap this function in a `tokio::time::timeout` (which `SecureChannel`
 /// does via `SessionConfig::handshake_timeout`).
 pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     transport: &mut T,
     provider: &dyn AttestationProvider,
+    verifier: &dyn AttestationVerifier,
+    expected_measurements: Option<&ExpectedMeasurements>,
 ) -> Result<HandshakeResult, crate::error::Error> {
-    // Step 1: Receive initiator hello (expect seq=0).
+    // Step 1: Receive initiator hello with attestation (expect seq=0).
     let mut read_buf = BytesMut::with_capacity(4096);
     let init_frame = recv_frame(transport, &mut read_buf).await?;
     validate_handshake_frame(&init_frame, FrameType::Hello, 0)?;
 
-    let (init_pk_bytes, init_nonce) = parse_initiator_hello(&init_frame.payload)?;
+    let (init_pk_bytes, init_nonce, init_att_doc) = parse_initiator_hello(&init_frame.payload)?;
+
+    // Verify initiator's attestation.
+    let init_verified = verifier.verify(&init_att_doc).await.map_err(|e| {
+        tracing::warn!("initiator attestation verification failed: {e}");
+        SessionError::HandshakeFailed("initiator attestation verification failed".into())
+    })?;
+
+    tracing::info!(
+        document_hash = hex::encode(init_verified.document_hash),
+        measurement_count = init_verified.measurements.len(),
+        "initiator attestation verification succeeded"
+    );
+
+    verify_attestation(
+        &init_verified,
+        &init_pk_bytes,
+        expected_measurements,
+        "responder",
+    )?;
+
+    let init_att_hash: [u8; 32] = Sha256::digest(&init_att_doc.raw).into();
 
     // Generate our keypair and nonce.
     let keypair = KeyPair::generate();
@@ -367,18 +437,18 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     rand::thread_rng().fill(&mut nonce);
     let pk_bytes = keypair.public.to_bytes();
 
-    // Step 2: Generate attestation binding our public key.
+    // Step 2: Generate our attestation binding our public key.
     let att_doc = provider
         .attest(None, Some(&nonce), Some(&pk_bytes))
         .await
         .map_err(|e| {
-            tracing::warn!("attestation generation failed: {e}");
+            tracing::warn!("responder attestation generation failed: {e}");
             SessionError::HandshakeFailed("attestation generation failed".into())
         })?;
 
     tracing::debug!(
         doc_len = att_doc.raw.len(),
-        "attestation document generated"
+        "responder attestation document generated"
     );
 
     // Send responder hello (seq=0).
@@ -386,7 +456,7 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     send_frame(transport, hello).await?;
 
     // Derive keys.
-    let att_hash: [u8; 32] = Sha256::digest(&att_doc.raw).into();
+    let resp_att_hash: [u8; 32] = Sha256::digest(&att_doc.raw).into();
 
     let mut combined_nonce = [0u8; 32];
     for i in 0..32 {
@@ -394,8 +464,13 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     }
 
     let init_pk = x25519_dalek::PublicKey::from(init_pk_bytes);
-    let transcript_hash =
-        transcript::compute_transcript(&att_hash, &init_pk_bytes, &pk_bytes, &combined_nonce);
+    let transcript_hash = transcript::compute_transcript(
+        &init_att_hash,
+        &resp_att_hash,
+        &init_pk_bytes,
+        &pk_bytes,
+        &combined_nonce,
+    );
 
     let (send_key, recv_key) =
         hpke::derive_session_keys(&keypair.secret, &init_pk, &transcript_hash, false)?;
@@ -425,7 +500,7 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
         send_key,
         recv_key,
         session_id,
-        peer_attestation: None,
+        peer_attestation: Some(init_verified),
         residual: read_buf,
     })
 }

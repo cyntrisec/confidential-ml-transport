@@ -39,6 +39,11 @@ struct Args {
 }
 
 #[cfg(feature = "tcp-mock")]
+fn create_provider() -> Box<dyn confidential_ml_transport::AttestationProvider> {
+    Box::new(confidential_ml_transport::MockProvider::new())
+}
+
+#[cfg(feature = "tcp-mock")]
 fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> {
     Box::new(confidential_ml_transport::MockVerifier::new())
 }
@@ -150,7 +155,12 @@ async fn main() -> Result<()> {
     anyhow::ensure!(args.inference_rounds > 0, "--inference-rounds must be > 0");
 
     #[cfg(feature = "tcp-mock")]
+    let provider = create_provider();
+    #[cfg(feature = "tcp-mock")]
     let verifier = create_verifier();
+    #[cfg(feature = "vsock-nitro")]
+    let provider: Box<dyn confidential_ml_transport::AttestationProvider> =
+        Box::new(confidential_ml_transport::MockProvider::new());
     #[cfg(feature = "vsock-nitro")]
     let verifier = create_verifier()?;
 
@@ -164,7 +174,7 @@ async fn main() -> Result<()> {
         let transport = connect(args.cid, args.port).await?;
 
         let mut ch =
-            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
                 .await?;
         ch.send(Bytes::from_static(b"ECHO:warmup")).await?;
         let _ = ch.recv().await?;
@@ -186,7 +196,7 @@ async fn main() -> Result<()> {
         let transport = connect(args.cid, args.port).await?;
 
         let mut ch =
-            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
                 .await?;
         let elapsed = start.elapsed();
         handshake_times.push(elapsed);
@@ -212,7 +222,7 @@ async fn main() -> Result<()> {
         let transport = connect(args.cid, args.port).await?;
 
         let mut ch =
-            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
                 .await?;
 
         let payload = "ECHO:".to_string() + &"x".repeat(64); // 64-byte echo payload
@@ -250,7 +260,7 @@ async fn main() -> Result<()> {
         let transport = connect(args.cid, args.port).await?;
 
         let mut ch =
-            SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config.clone())
+            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
                 .await?;
 
         let text = "The quick brown fox jumps over the lazy dog";

@@ -26,6 +26,11 @@ fn create_provider() -> Box<dyn confidential_ml_transport::AttestationProvider> 
     Box::new(confidential_ml_transport::MockProvider::new())
 }
 
+#[cfg(feature = "tcp-mock")]
+fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> {
+    Box::new(confidential_ml_transport::MockVerifier::new())
+}
+
 #[cfg(feature = "vsock-nitro")]
 fn create_provider() -> Result<Box<dyn confidential_ml_transport::AttestationProvider>> {
     Ok(Box::new(confidential_ml_transport::NitroProvider::new()?))
@@ -45,9 +50,14 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "tcp-mock")]
     let provider = create_provider();
+    #[cfg(feature = "tcp-mock")]
+    let verifier = create_verifier();
 
     #[cfg(feature = "vsock-nitro")]
     let provider = create_provider()?;
+    #[cfg(feature = "vsock-nitro")]
+    let verifier: Box<dyn confidential_ml_transport::AttestationVerifier> =
+        Box::new(confidential_ml_transport::MockVerifier::new());
 
     let config = SessionConfig::default();
 
@@ -62,7 +72,7 @@ async fn main() -> Result<()> {
             stream.set_nodelay(true)?;
             tracing::info!("accepted connection from {peer}");
 
-            handle_connection(stream, provider.as_ref(), config.clone(), &embedding_model).await?;
+            handle_connection(stream, provider.as_ref(), verifier.as_ref(), config.clone(), &embedding_model).await?;
         }
     }
 
@@ -76,7 +86,7 @@ async fn main() -> Result<()> {
                 confidential_ml_transport::transport::vsock::accept(&mut listener).await?;
             tracing::info!("accepted vsock connection from {:?}", peer);
 
-            handle_connection(stream, provider.as_ref(), config.clone(), &embedding_model).await?;
+            handle_connection(stream, provider.as_ref(), verifier.as_ref(), config.clone(), &embedding_model).await?;
         }
     }
 }
@@ -84,13 +94,14 @@ async fn main() -> Result<()> {
 async fn handle_connection<T>(
     transport: T,
     provider: &dyn confidential_ml_transport::AttestationProvider,
+    verifier: &dyn confidential_ml_transport::AttestationVerifier,
     config: SessionConfig,
     embedding_model: &model::EmbeddingModel,
 ) -> Result<()>
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    let mut channel = SecureChannel::accept_with_attestation(transport, provider, config).await?;
+    let mut channel = SecureChannel::accept_with_attestation(transport, provider, verifier, config).await?;
     tracing::info!("handshake complete");
 
     loop {

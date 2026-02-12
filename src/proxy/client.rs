@@ -6,7 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 
-use crate::attestation::AttestationVerifier;
+use crate::attestation::{AttestationProvider, AttestationVerifier};
 use crate::error::Error;
 use crate::session::channel::{Message, SecureChannel};
 use crate::session::SessionConfig;
@@ -35,6 +35,7 @@ pub struct ClientProxyConfig {
 /// bidirectionally. Limits concurrency to `max_connections`.
 pub async fn run_client_proxy(
     config: ClientProxyConfig,
+    provider: Arc<dyn AttestationProvider>,
     verifier: Arc<dyn AttestationVerifier>,
 ) -> Result<(), Error> {
     let listener = TcpListener::bind(config.listen_addr)
@@ -59,6 +60,7 @@ pub async fn run_client_proxy(
         let (stream, peer_addr) = listener.accept().await.map_err(Error::Io)?;
         stream.set_nodelay(true).ok();
 
+        let provider = Arc::clone(&provider);
         let verifier = Arc::clone(&verifier);
         let enclave_addr = config.enclave_addr;
         let session_config = config.session_config.clone();
@@ -69,7 +71,7 @@ pub async fn run_client_proxy(
             let _permit = permit;
             tracing::debug!(%peer_addr, "accepted plaintext connection");
             if let Err(e) =
-                handle_client_connection(stream, verifier.as_ref(), enclave_addr, session_config)
+                handle_client_connection(stream, provider.as_ref(), verifier.as_ref(), enclave_addr, session_config)
                     .await
             {
                 tracing::warn!(%peer_addr, error = %e, "connection handler error");
@@ -80,16 +82,17 @@ pub async fn run_client_proxy(
 
 async fn handle_client_connection(
     mut local: TcpStream,
+    provider: &dyn AttestationProvider,
     verifier: &dyn AttestationVerifier,
     enclave_addr: SocketAddr,
     config: SessionConfig,
 ) -> Result<(), Error> {
-    // Connect to the enclave and perform handshake.
+    // Connect to the enclave and perform handshake (mutual attestation).
     let enclave_stream = TcpStream::connect(enclave_addr).await.map_err(Error::Io)?;
     enclave_stream.set_nodelay(true).ok();
 
     let mut channel =
-        SecureChannel::connect_with_attestation(enclave_stream, verifier, config).await?;
+        SecureChannel::connect_with_attestation(enclave_stream, provider, verifier, config).await?;
 
     let (mut local_read, mut local_write) = local.split();
 

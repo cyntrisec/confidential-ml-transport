@@ -26,6 +26,11 @@ struct Args {
 }
 
 #[cfg(feature = "tcp-mock")]
+fn create_provider() -> Box<dyn confidential_ml_transport::AttestationProvider> {
+    Box::new(confidential_ml_transport::MockProvider::new())
+}
+
+#[cfg(feature = "tcp-mock")]
 fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> {
     Box::new(confidential_ml_transport::MockVerifier::new())
 }
@@ -70,7 +75,12 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     #[cfg(feature = "tcp-mock")]
+    let provider = create_provider();
+    #[cfg(feature = "tcp-mock")]
     let verifier = create_verifier();
+    #[cfg(feature = "vsock-nitro")]
+    let provider: Box<dyn confidential_ml_transport::AttestationProvider> =
+        Box::new(confidential_ml_transport::MockProvider::new());
     #[cfg(feature = "vsock-nitro")]
     let verifier = create_verifier()?;
 
@@ -96,7 +106,7 @@ async fn main() -> Result<()> {
     };
 
     let mut channel =
-        SecureChannel::connect_with_attestation(transport, verifier.as_ref(), config).await?;
+        SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config).await?;
     tracing::info!("handshake complete");
 
     for text in &args.text {

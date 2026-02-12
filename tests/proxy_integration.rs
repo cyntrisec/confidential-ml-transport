@@ -58,7 +58,9 @@ async fn proxy_end_to_end_echo() {
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
         Arc::new(MockProvider::new());
-    tokio::spawn(run_server_proxy(server_config, provider));
+    let server_verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
+        Arc::new(MockVerifier::new());
+    tokio::spawn(run_server_proxy(server_config, provider, server_verifier));
 
     // Small delay for server proxy to start listening.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -74,9 +76,11 @@ async fn proxy_end_to_end_echo() {
         session_config: SessionConfig::default(),
         max_connections: 0,
     };
+    let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
+        Arc::new(MockProvider::new());
     let verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
         Arc::new(MockVerifier::new());
-    tokio::spawn(run_client_proxy(client_config, verifier));
+    tokio::spawn(run_client_proxy(client_config, client_provider, verifier));
 
     // Small delay for client proxy to start listening.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -120,7 +124,9 @@ async fn proxy_client_disconnect_is_clean() {
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
         Arc::new(MockProvider::new());
-    tokio::spawn(run_server_proxy(server_config, provider));
+    let server_verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
+        Arc::new(MockVerifier::new());
+    tokio::spawn(run_server_proxy(server_config, provider, server_verifier));
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -134,9 +140,11 @@ async fn proxy_client_disconnect_is_clean() {
         session_config: SessionConfig::default(),
         max_connections: 0,
     };
+    let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
+        Arc::new(MockProvider::new());
     let verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
         Arc::new(MockVerifier::new());
-    tokio::spawn(run_client_proxy(client_config, verifier));
+    tokio::spawn(run_client_proxy(client_config, client_provider, verifier));
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -176,7 +184,9 @@ async fn proxy_backend_unreachable_does_not_crash() {
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
         Arc::new(MockProvider::new());
-    tokio::spawn(run_server_proxy(server_config, provider));
+    let server_verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
+        Arc::new(MockVerifier::new());
+    tokio::spawn(run_server_proxy(server_config, provider, server_verifier));
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -190,9 +200,11 @@ async fn proxy_backend_unreachable_does_not_crash() {
         session_config: SessionConfig::default(),
         max_connections: 0,
     };
+    let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
+        Arc::new(MockProvider::new());
     let verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
         Arc::new(MockVerifier::new());
-    tokio::spawn(run_client_proxy(client_config, verifier));
+    tokio::spawn(run_client_proxy(client_config, client_provider, verifier));
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -234,7 +246,9 @@ async fn proxy_concurrent_connections() {
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
         Arc::new(MockProvider::new());
-    tokio::spawn(run_server_proxy(server_config, provider));
+    let server_verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
+        Arc::new(MockVerifier::new());
+    tokio::spawn(run_server_proxy(server_config, provider, server_verifier));
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -248,9 +262,11 @@ async fn proxy_concurrent_connections() {
         session_config: SessionConfig::default(),
         max_connections: 0,
     };
+    let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
+        Arc::new(MockProvider::new());
     let verifier: Arc<dyn confidential_ml_transport::AttestationVerifier> =
         Arc::new(MockVerifier::new());
-    tokio::spawn(run_client_proxy(client_config, verifier));
+    tokio::spawn(run_client_proxy(client_config, client_provider, verifier));
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 

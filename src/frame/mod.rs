@@ -15,7 +15,9 @@ pub const MAGIC: u16 = 0xCF4D;
 /// - v2: AAD = `version || msg_type || flags || session_id || sequence`
 ///   (fixes type-confusion attack where an active attacker could flip msg_type
 ///   in the unencrypted header without breaking AEAD verification)
-pub const PROTOCOL_VERSION: u8 = 2;
+/// - v3: Mutual attestation — both initiator and responder send attestation
+///   documents. Transcript binds both attestation hashes.
+pub const PROTOCOL_VERSION: u8 = 3;
 
 /// Fixed header size in bytes.
 pub const HEADER_SIZE: usize = 13;

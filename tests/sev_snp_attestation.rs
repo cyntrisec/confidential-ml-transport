@@ -73,11 +73,13 @@ async fn sev_snp_handshake_integration() {
     let config = SessionConfig::default();
 
     let server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &provider, config).await
+        let server_verifier = SevSnpVerifier::new(None);
+        SecureChannel::accept_with_attestation(server_io, &provider, &server_verifier, config).await
     });
 
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &verifier, client_config)
+    let client_provider = SyntheticSevSnpProvider::new(measurement);
+    let mut client = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config)
         .await
         .expect("client handshake should succeed");
 
@@ -118,11 +120,13 @@ async fn sev_snp_handshake_with_measurement_verification() {
 
     let config = SessionConfig::default();
     let server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &provider, config).await
+        let server_verifier = SevSnpVerifier::new(None);
+        SecureChannel::accept_with_attestation(server_io, &provider, &server_verifier, config).await
     });
 
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &verifier, client_config)
+    let client_provider = SyntheticSevSnpProvider::new(measurement);
+    let mut client = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config)
         .await
         .expect("handshake with correct measurement should succeed");
 
@@ -147,11 +151,13 @@ async fn sev_snp_handshake_rejects_wrong_measurement() {
 
     let config = SessionConfig::default();
     let _server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &provider, config).await
+        let server_verifier = SevSnpVerifier::new(None);
+        SecureChannel::accept_with_attestation(server_io, &provider, &server_verifier, config).await
     });
 
     let client_config = SessionConfig::default();
-    let result = SecureChannel::connect_with_attestation(client_io, &verifier, client_config).await;
+    let client_provider = SyntheticSevSnpProvider::new(measurement);
+    let result = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config).await;
 
     assert!(
         result.is_err(),

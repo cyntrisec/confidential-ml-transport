@@ -6,7 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 
-use crate::attestation::AttestationProvider;
+use crate::attestation::{AttestationProvider, AttestationVerifier};
 use crate::error::Error;
 use crate::session::channel::{Message, SecureChannel};
 use crate::session::SessionConfig;
@@ -36,6 +36,7 @@ pub struct ServerProxyConfig {
 pub async fn run_server_proxy(
     config: ServerProxyConfig,
     provider: Arc<dyn AttestationProvider>,
+    verifier: Arc<dyn AttestationVerifier>,
 ) -> Result<(), Error> {
     let listener = TcpListener::bind(config.listen_addr)
         .await
@@ -60,6 +61,7 @@ pub async fn run_server_proxy(
         stream.set_nodelay(true).ok();
 
         let provider = Arc::clone(&provider);
+        let verifier = Arc::clone(&verifier);
         let backend_addr = config.backend_addr;
         let session_config = config.session_config.clone();
 
@@ -69,7 +71,7 @@ pub async fn run_server_proxy(
             let _permit = permit;
             tracing::debug!(%peer_addr, "accepted connection");
             if let Err(e) =
-                handle_server_connection(stream, provider.as_ref(), backend_addr, session_config)
+                handle_server_connection(stream, provider.as_ref(), verifier.as_ref(), backend_addr, session_config)
                     .await
             {
                 tracing::warn!(%peer_addr, error = %e, "connection handler error");
@@ -81,11 +83,12 @@ pub async fn run_server_proxy(
 async fn handle_server_connection(
     stream: TcpStream,
     provider: &dyn AttestationProvider,
+    verifier: &dyn AttestationVerifier,
     backend_addr: SocketAddr,
     config: SessionConfig,
 ) -> Result<(), Error> {
-    // Perform handshake with the client.
-    let mut channel = SecureChannel::accept_with_attestation(stream, provider, config).await?;
+    // Perform handshake with the client (mutual attestation).
+    let mut channel = SecureChannel::accept_with_attestation(stream, provider, verifier, config).await?;
 
     // Connect to the local backend.
     let mut backend = TcpStream::connect(backend_addr).await.map_err(Error::Io)?;

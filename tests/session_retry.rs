@@ -148,8 +148,9 @@ async fn connect_with_retry_succeeds() {
 
     let server_handle = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
+        let server_verifier = MockVerifier::new();
         let mut channel =
-            SecureChannel::accept_with_attestation(stream, &provider, SessionConfig::default())
+            SecureChannel::accept_with_attestation(stream, &provider, &server_verifier, SessionConfig::default())
                 .await
                 .unwrap();
         let msg = channel.recv().await.unwrap();
@@ -166,6 +167,7 @@ async fn connect_with_retry_succeeds() {
         .build()
         .unwrap();
 
+    let client_provider = MockProvider::new();
     let attempt_clone = Arc::clone(&attempt);
     let mut channel = SecureChannel::connect_with_retry(
         || {
@@ -175,6 +177,7 @@ async fn connect_with_retry_succeeds() {
                 tokio::net::TcpStream::connect(addr).await
             }
         },
+        &client_provider,
         &verifier,
         config,
     )
@@ -274,9 +277,11 @@ async fn measurement_verification_in_handshake() {
         .unwrap();
 
     let server_handle = tokio::spawn(async move {
+        let server_verifier = MockVerifier::new();
         let mut channel = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &server_verifier,
             SessionConfig::default(),
         )
         .await
@@ -286,8 +291,9 @@ async fn measurement_verification_in_handshake() {
     });
 
     let client_handle = tokio::spawn(async move {
+        let client_provider = MockProvider::new();
         let mut channel =
-            SecureChannel::connect_with_attestation(client_transport, &verifier, config)
+            SecureChannel::connect_with_attestation(client_transport, &client_provider, &verifier, config)
                 .await
                 .unwrap();
         channel
@@ -319,17 +325,20 @@ async fn measurement_mismatch_rejects_handshake() {
         .unwrap();
 
     let server_handle = tokio::spawn(async move {
+        let server_verifier = MockVerifier::new();
         let _ = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &server_verifier,
             SessionConfig::default(),
         )
         .await;
     });
 
     let client_handle = tokio::spawn(async move {
+        let client_provider = MockProvider::new();
         let result =
-            SecureChannel::connect_with_attestation(client_transport, &verifier, config).await;
+            SecureChannel::connect_with_attestation(client_transport, &client_provider, &verifier, config).await;
         assert!(result.is_err());
         let err = format!("{}", result.err().unwrap());
         assert!(

@@ -38,10 +38,9 @@ pub enum Message {
 ///
 /// **Security notes:**
 /// - All post-handshake frames are encrypted and authenticated via AEAD.
-/// - The handshake currently supports one-way attestation only: the initiator
-///   verifies the responder's attestation, but the responder does not verify the
-///   initiator. For mutual attestation, perform a second application-level
-///   challenge-response after the session is established.
+/// - The v3 handshake performs mutual attestation: both the initiator and
+///   responder send attestation documents and verify each other's identity.
+///   Both sides receive `peer_attestation: Some(verified)`.
 /// - This channel authenticates the data stream but does not bind to a specific
 ///   transport address (IP, VSock CID). A transport-level identity check should
 ///   be performed separately if required.
@@ -59,17 +58,22 @@ pub struct SecureChannel<T> {
 impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     /// Establish a secure channel as the initiator (client).
     ///
-    /// Performs the 3-message handshake, verifying the responder's attestation.
+    /// Performs the 3-message handshake with mutual attestation.
+    /// The initiator provides its own attestation via `provider` and verifies
+    /// the responder's attestation via `verifier`.
     /// Subject to the configured `handshake_timeout`.
     pub async fn connect_with_attestation(
         mut transport: T,
+        provider: &dyn AttestationProvider,
         verifier: &dyn AttestationVerifier,
         config: SessionConfig,
     ) -> Result<Self, Error> {
+        config.validate_measurements()?;
         let result = tokio::time::timeout(
             config.handshake_timeout,
             handshake::initiate(
                 &mut transport,
+                provider,
                 verifier,
                 config.expected_measurements.as_ref(),
             ),
@@ -99,6 +103,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     /// [`connect_with_attestation`](Self::connect_with_attestation).
     pub async fn connect_with_retry<F, Fut>(
         transport_factory: F,
+        provider: &dyn AttestationProvider,
         verifier: &dyn AttestationVerifier,
         config: SessionConfig,
     ) -> Result<Self, Error>
@@ -110,29 +115,39 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             Some(policy) => {
                 retry::with_retry(&policy, || async {
                     let transport = transport_factory().await.map_err(Error::Io)?;
-                    Self::connect_with_attestation(transport, verifier, config.clone()).await
+                    Self::connect_with_attestation(transport, provider, verifier, config.clone())
+                        .await
                 })
                 .await
             }
             None => {
                 let transport = transport_factory().await.map_err(Error::Io)?;
-                Self::connect_with_attestation(transport, verifier, config).await
+                Self::connect_with_attestation(transport, provider, verifier, config).await
             }
         }
     }
 
     /// Establish a secure channel as the responder (server).
     ///
-    /// Performs the 3-message handshake, providing our attestation.
+    /// Performs the 3-message handshake with mutual attestation.
+    /// The responder provides its own attestation via `provider` and verifies
+    /// the initiator's attestation via `verifier`.
     /// Subject to the configured `handshake_timeout`.
     pub async fn accept_with_attestation(
         mut transport: T,
         provider: &dyn AttestationProvider,
+        verifier: &dyn AttestationVerifier,
         config: SessionConfig,
     ) -> Result<Self, Error> {
+        config.validate_measurements()?;
         let result = tokio::time::timeout(
             config.handshake_timeout,
-            handshake::respond(&mut transport, provider),
+            handshake::respond(
+                &mut transport,
+                provider,
+                verifier,
+                config.expected_measurements.as_ref(),
+            ),
         )
         .await
         .map_err(|_| Error::Session(SessionError::Timeout))??;
@@ -152,11 +167,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         })
     }
 
-    /// Return the peer's verified attestation, if available.
+    /// Return the peer's verified attestation.
     ///
-    /// For the initiator (client), this contains the responder's attestation
-    /// including `user_data`, `public_key`, and `measurements`.
-    /// For the responder (server), this is `None` (one-way attestation).
+    /// With mutual attestation (v3), both the initiator and responder receive
+    /// the peer's verified attestation including `user_data`, `public_key`, and
+    /// `measurements`.
     pub fn peer_attestation(&self) -> Option<&VerifiedAttestation> {
         self.peer_attestation.as_ref()
     }

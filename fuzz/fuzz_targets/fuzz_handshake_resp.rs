@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use confidential_ml_transport::attestation::mock::MockProvider;
+use confidential_ml_transport::attestation::mock::{MockProvider, MockVerifier};
 use confidential_ml_transport::session::handshake;
 
 fuzz_target!(|data: &[u8]| {
@@ -31,6 +31,7 @@ fuzz_target!(|data: &[u8]| {
 
     rt.block_on(async {
         let provider = MockProvider::new();
+        let verifier = MockVerifier::new();
 
         // Create a duplex where one side is pre-loaded with fuzz data.
         // The responder reads from reader and writes to writer.
@@ -45,7 +46,7 @@ fuzz_target!(|data: &[u8]| {
         });
 
         // Run the responder — it should return Err, never panic.
-        let _ = handshake::respond(&mut server, &provider).await;
+        let _ = handshake::respond(&mut server, &provider, &verifier, None).await;
 
         let _ = write_handle.await;
     });

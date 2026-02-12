@@ -34,8 +34,8 @@ fn bench_reconnect(c: &mut Criterion) {
                 let config = SessionConfig::default();
 
                 let (server_ch, client_ch) = tokio::join!(
-                    SecureChannel::accept_with_attestation(server, &provider, config.clone()),
-                    SecureChannel::connect_with_attestation(client, &verifier, config),
+                    SecureChannel::accept_with_attestation(server, &provider, &verifier, config.clone()),
+                    SecureChannel::connect_with_attestation(client, &provider, &verifier, config),
                 );
 
                 let mut server_ch = server_ch.unwrap();
@@ -75,8 +75,8 @@ fn bench_reconnect(c: &mut Criterion) {
             let config = SessionConfig::default();
 
             let (server_ch, client_ch) = tokio::join!(
-                SecureChannel::accept_with_attestation(server, &provider, config.clone()),
-                SecureChannel::connect_with_attestation(client, &verifier, config),
+                SecureChannel::accept_with_attestation(server, &provider, &verifier, config.clone()),
+                SecureChannel::connect_with_attestation(client, &provider, &verifier, config),
             );
 
             let mut server_ch = server_ch.unwrap();
@@ -124,8 +124,8 @@ fn bench_reconnect(c: &mut Criterion) {
                 let config = SessionConfig::default();
 
                 let (server_ch1, client_ch1) = tokio::join!(
-                    SecureChannel::accept_with_attestation(server1, &provider, config.clone()),
-                    SecureChannel::connect_with_attestation(client1, &verifier, config.clone()),
+                    SecureChannel::accept_with_attestation(server1, &provider, &verifier, config.clone()),
+                    SecureChannel::connect_with_attestation(client1, &provider, &verifier, config.clone()),
                 );
 
                 let mut server_ch1 = server_ch1.unwrap();
@@ -142,8 +142,8 @@ fn bench_reconnect(c: &mut Criterion) {
                 let (client2, server2) = tokio::io::duplex(DUPLEX_SIZE);
 
                 let (server_ch2, client_ch2) = tokio::join!(
-                    SecureChannel::accept_with_attestation(server2, &provider, config.clone()),
-                    SecureChannel::connect_with_attestation(client2, &verifier, config),
+                    SecureChannel::accept_with_attestation(server2, &provider, &verifier, config.clone()),
+                    SecureChannel::connect_with_attestation(client2, &provider, &verifier, config),
                 );
 
                 black_box((server_ch2.unwrap(), client_ch2.unwrap()));

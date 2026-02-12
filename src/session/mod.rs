@@ -27,6 +27,11 @@ pub struct SessionConfig {
 
     /// Optional expected measurements to verify against the peer's attestation.
     pub expected_measurements: Option<ExpectedMeasurements>,
+
+    /// When `true`, the session will refuse to complete the handshake unless
+    /// `expected_measurements` is `Some`. This prevents accidental deployment
+    /// without measurement pinning.
+    pub require_measurements: bool,
 }
 
 impl Default for SessionConfig {
@@ -36,11 +41,25 @@ impl Default for SessionConfig {
             handshake_timeout: Duration::from_secs(30),
             retry_policy: None,
             expected_measurements: None,
+            require_measurements: false,
         }
     }
 }
 
 impl SessionConfig {
+    /// Validate that measurement requirements are satisfied.
+    ///
+    /// Returns an error if `require_measurements` is `true` but
+    /// `expected_measurements` is `None`.
+    pub fn validate_measurements(&self) -> Result<(), Error> {
+        if self.require_measurements && self.expected_measurements.is_none() {
+            return Err(Error::Session(crate::error::SessionError::HandshakeFailed(
+                "require_measurements is set but expected_measurements is None".into(),
+            )));
+        }
+        Ok(())
+    }
+
     /// Create a builder for constructing a `SessionConfig`.
     pub fn builder() -> SessionConfigBuilder {
         SessionConfigBuilder::default()
@@ -54,6 +73,7 @@ pub struct SessionConfigBuilder {
     handshake_timeout: Duration,
     retry_policy: Option<RetryPolicy>,
     expected_measurements: Option<ExpectedMeasurements>,
+    require_measurements: bool,
 }
 
 impl Default for SessionConfigBuilder {
@@ -64,6 +84,7 @@ impl Default for SessionConfigBuilder {
             handshake_timeout: defaults.handshake_timeout,
             retry_policy: None,
             expected_measurements: None,
+            require_measurements: false,
         }
     }
 }
@@ -93,6 +114,15 @@ impl SessionConfigBuilder {
         self
     }
 
+    /// Require that `expected_measurements` is set before the handshake begins.
+    ///
+    /// When enabled, `connect_with_attestation` and `accept_with_attestation`
+    /// will return an error if `expected_measurements` is `None`.
+    pub fn require_measurements(mut self) -> Self {
+        self.require_measurements = true;
+        self
+    }
+
     /// Build the `SessionConfig`, validating that all values are sensible.
     pub fn build(self) -> Result<SessionConfig, Error> {
         if self.max_payload_size == 0 {
@@ -110,6 +140,7 @@ impl SessionConfigBuilder {
             handshake_timeout: self.handshake_timeout,
             retry_policy: self.retry_policy,
             expected_measurements: self.expected_measurements,
+            require_measurements: self.require_measurements,
         })
     }
 }

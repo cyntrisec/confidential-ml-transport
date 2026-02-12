@@ -30,6 +30,7 @@ async fn heartbeat_is_encrypted() {
         let mut channel = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await
@@ -47,6 +48,7 @@ async fn heartbeat_is_encrypted() {
     let client_handle = tokio::spawn(async move {
         let mut channel = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )
@@ -73,6 +75,7 @@ async fn shutdown_is_encrypted() {
         let mut channel = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await
@@ -85,6 +88,7 @@ async fn shutdown_is_encrypted() {
     let client_handle = tokio::spawn(async move {
         let mut channel = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )
@@ -115,6 +119,7 @@ async fn sequence_counters_unified() {
         let mut channel = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await
@@ -139,6 +144,7 @@ async fn sequence_counters_unified() {
     let client_handle = tokio::spawn(async move {
         let mut channel = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )
@@ -172,7 +178,8 @@ async fn handshake_timeout_triggers() {
         .unwrap();
 
     let verifier = MockVerifier::new();
-    let result = SecureChannel::connect_with_attestation(client_transport, &verifier, config).await;
+    let client_provider = MockProvider::new();
+    let result = SecureChannel::connect_with_attestation(client_transport, &client_provider, &verifier, config).await;
 
     assert!(result.is_err());
     let err = format!("{}", result.err().unwrap());
@@ -199,7 +206,7 @@ async fn handshake_within_timeout_succeeds() {
 
     let server_handle = tokio::spawn(async move {
         let mut channel =
-            SecureChannel::accept_with_attestation(server_transport, &provider, server_config)
+            SecureChannel::accept_with_attestation(server_transport, &provider, &MockVerifier::new(), server_config)
                 .await
                 .unwrap();
         channel.shutdown().await.unwrap();
@@ -207,7 +214,7 @@ async fn handshake_within_timeout_succeeds() {
 
     let client_handle = tokio::spawn(async move {
         let mut channel =
-            SecureChannel::connect_with_attestation(client_transport, &verifier, client_config)
+            SecureChannel::connect_with_attestation(client_transport, &MockProvider::new(), &verifier, client_config)
                 .await
                 .unwrap();
         let msg = channel.recv().await.unwrap();
@@ -271,6 +278,7 @@ async fn reject_attestation_without_public_key() {
         let result = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await;
@@ -281,6 +289,7 @@ async fn reject_attestation_without_public_key() {
     let client_handle = tokio::spawn(async move {
         let result = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )
@@ -429,6 +438,7 @@ async fn handshake_with_correct_sequences_succeeds() {
         SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await
@@ -438,6 +448,7 @@ async fn handshake_with_correct_sequences_succeeds() {
     let client_handle = tokio::spawn(async move {
         let mut channel = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )
@@ -463,6 +474,7 @@ async fn handshake_rejects_wrong_sequence() {
         let result = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::builder()
                 .handshake_timeout(Duration::from_millis(500))
                 .build()
@@ -514,6 +526,7 @@ async fn confirmation_binds_both_keys_bidirectional() {
         let mut channel = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await
@@ -539,6 +552,7 @@ async fn confirmation_binds_both_keys_bidirectional() {
     let client_handle = tokio::spawn(async move {
         let mut channel = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )
@@ -584,6 +598,7 @@ async fn session_id_domain_separation_consistent() {
         let mut channel = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await
@@ -599,6 +614,7 @@ async fn session_id_domain_separation_consistent() {
     let client_handle = tokio::spawn(async move {
         let mut channel = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )
@@ -684,6 +700,7 @@ async fn normal_session_within_buffer_bounds() {
         let mut channel = SecureChannel::accept_with_attestation(
             server_transport,
             &provider,
+            &MockVerifier::new(),
             SessionConfig::default(),
         )
         .await
@@ -703,6 +720,7 @@ async fn normal_session_within_buffer_bounds() {
     let client_handle = tokio::spawn(async move {
         let mut channel = SecureChannel::connect_with_attestation(
             client_transport,
+            &MockProvider::new(),
             &verifier,
             SessionConfig::default(),
         )

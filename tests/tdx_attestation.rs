@@ -65,12 +65,14 @@ async fn tdx_handshake_integration() {
 
     let config = SessionConfig::default();
 
+    let server_provider = SyntheticTdxProvider::new(mrtd);
+    let server_verifier = TdxVerifier::new(None);
     let server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &provider, config).await
+        SecureChannel::accept_with_attestation(server_io, &server_provider, &server_verifier, config).await
     });
 
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &verifier, client_config)
+    let mut client = SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
         .await
         .expect("client handshake should succeed");
 
@@ -110,12 +112,14 @@ async fn tdx_handshake_with_measurement_verification() {
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
     let config = SessionConfig::default();
+    let server_provider = SyntheticTdxProvider::new(mrtd);
+    let server_verifier = TdxVerifier::new(Some(mrtd.to_vec()));
     let server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &provider, config).await
+        SecureChannel::accept_with_attestation(server_io, &server_provider, &server_verifier, config).await
     });
 
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &verifier, client_config)
+    let mut client = SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
         .await
         .expect("handshake with correct MRTD should succeed");
 
@@ -139,12 +143,14 @@ async fn tdx_handshake_rejects_wrong_measurement() {
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
     let config = SessionConfig::default();
+    let server_provider = SyntheticTdxProvider::new(mrtd);
+    let server_verifier = TdxVerifier::new(Some(vec![0xDD; 48]));
     let _server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &provider, config).await
+        SecureChannel::accept_with_attestation(server_io, &server_provider, &server_verifier, config).await
     });
 
     let client_config = SessionConfig::default();
-    let result = SecureChannel::connect_with_attestation(client_io, &verifier, client_config).await;
+    let result = SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config).await;
 
     assert!(result.is_err(), "handshake should fail on MRTD mismatch");
 }
