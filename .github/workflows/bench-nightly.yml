@@ -24,10 +24,10 @@ jobs:
 
       - name: Run benchmarks (reduced samples)
         run: |
-          cargo bench --bench handshake -- --sample-size 10 --warm-up-time 1 --measurement-time 3
-          cargo bench --bench confidential_overhead -- --sample-size 10 --warm-up-time 1 --measurement-time 3
-          cargo bench --bench throughput -- --sample-size 10 --warm-up-time 1 --measurement-time 3
-          cargo bench --bench reconnect -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+          cargo bench --features mock --bench handshake -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+          cargo bench --features mock --bench confidential_overhead -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+          cargo bench --features mock --bench throughput -- --sample-size 10 --warm-up-time 1 --measurement-time 3
+          cargo bench --features mock --bench reconnect -- --sample-size 10 --warm-up-time 1 --measurement-time 3
 
       - name: Check SLO thresholds
         run: bash scripts/check_bench_slo.sh
