@@ -72,7 +72,14 @@ async fn main() -> Result<()> {
             stream.set_nodelay(true)?;
             tracing::info!("accepted connection from {peer}");
 
-            handle_connection(stream, provider.as_ref(), verifier.as_ref(), config.clone(), &embedding_model).await?;
+            handle_connection(
+                stream,
+                provider.as_ref(),
+                verifier.as_ref(),
+                config.clone(),
+                &embedding_model,
+            )
+            .await?;
         }
     }
 
@@ -86,7 +93,14 @@ async fn main() -> Result<()> {
                 confidential_ml_transport::transport::vsock::accept(&mut listener).await?;
             tracing::info!("accepted vsock connection from {:?}", peer);
 
-            handle_connection(stream, provider.as_ref(), verifier.as_ref(), config.clone(), &embedding_model).await?;
+            handle_connection(
+                stream,
+                provider.as_ref(),
+                verifier.as_ref(),
+                config.clone(),
+                &embedding_model,
+            )
+            .await?;
         }
     }
 }
@@ -101,7 +115,8 @@ async fn handle_connection<T>(
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    let mut channel = SecureChannel::accept_with_attestation(transport, provider, verifier, config).await?;
+    let mut channel =
+        SecureChannel::accept_with_attestation(transport, provider, verifier, config).await?;
     tracing::info!("handshake complete");
 
     loop {

@@ -149,10 +149,14 @@ async fn connect_with_retry_succeeds() {
     let server_handle = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let server_verifier = MockVerifier::new();
-        let mut channel =
-            SecureChannel::accept_with_attestation(stream, &provider, &server_verifier, SessionConfig::default())
-                .await
-                .unwrap();
+        let mut channel = SecureChannel::accept_with_attestation(
+            stream,
+            &provider,
+            &server_verifier,
+            SessionConfig::default(),
+        )
+        .await
+        .unwrap();
         let msg = channel.recv().await.unwrap();
         assert!(matches!(msg, Message::Shutdown));
     });
@@ -292,10 +296,14 @@ async fn measurement_verification_in_handshake() {
 
     let client_handle = tokio::spawn(async move {
         let client_provider = MockProvider::new();
-        let mut channel =
-            SecureChannel::connect_with_attestation(client_transport, &client_provider, &verifier, config)
-                .await
-                .unwrap();
+        let mut channel = SecureChannel::connect_with_attestation(
+            client_transport,
+            &client_provider,
+            &verifier,
+            config,
+        )
+        .await
+        .unwrap();
         channel
             .send(Bytes::from_static(b"measurement-test"))
             .await
@@ -337,8 +345,13 @@ async fn measurement_mismatch_rejects_handshake() {
 
     let client_handle = tokio::spawn(async move {
         let client_provider = MockProvider::new();
-        let result =
-            SecureChannel::connect_with_attestation(client_transport, &client_provider, &verifier, config).await;
+        let result = SecureChannel::connect_with_attestation(
+            client_transport,
+            &client_provider,
+            &verifier,
+            config,
+        )
+        .await;
         assert!(result.is_err());
         let err = format!("{}", result.err().unwrap());
         assert!(

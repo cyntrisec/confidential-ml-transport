@@ -25,7 +25,12 @@ fn bench_handshake(c: &mut Criterion) {
                 let config = SessionConfig::default();
 
                 let (server_ch, client_ch) = tokio::join!(
-                    SecureChannel::accept_with_attestation(server, &provider, &verifier, config.clone()),
+                    SecureChannel::accept_with_attestation(
+                        server,
+                        &provider,
+                        &verifier,
+                        config.clone()
+                    ),
                     SecureChannel::connect_with_attestation(client, &provider, &verifier, config),
                 );
                 black_box((server_ch.unwrap(), client_ch.unwrap()));

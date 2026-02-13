@@ -105,8 +105,13 @@ async fn main() -> Result<()> {
         confidential_ml_transport::transport::vsock::connect(args.cid, args.port).await?
     };
 
-    let mut channel =
-        SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config).await?;
+    let mut channel = SecureChannel::connect_with_attestation(
+        transport,
+        provider.as_ref(),
+        verifier.as_ref(),
+        config,
+    )
+    .await?;
     tracing::info!("handshake complete");
 
     for text in &args.text {

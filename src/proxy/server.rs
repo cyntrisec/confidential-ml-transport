@@ -70,9 +70,14 @@ pub async fn run_server_proxy(
             // including on panic (no explicit drop needed).
             let _permit = permit;
             tracing::debug!(%peer_addr, "accepted connection");
-            if let Err(e) =
-                handle_server_connection(stream, provider.as_ref(), verifier.as_ref(), backend_addr, session_config)
-                    .await
+            if let Err(e) = handle_server_connection(
+                stream,
+                provider.as_ref(),
+                verifier.as_ref(),
+                backend_addr,
+                session_config,
+            )
+            .await
             {
                 tracing::warn!(%peer_addr, error = %e, "connection handler error");
             }
@@ -88,7 +93,8 @@ async fn handle_server_connection(
     config: SessionConfig,
 ) -> Result<(), Error> {
     // Perform handshake with the client (mutual attestation).
-    let mut channel = SecureChannel::accept_with_attestation(stream, provider, verifier, config).await?;
+    let mut channel =
+        SecureChannel::accept_with_attestation(stream, provider, verifier, config).await?;
 
     // Connect to the local backend.
     let mut backend = TcpStream::connect(backend_addr).await.map_err(Error::Io)?;

@@ -92,7 +92,12 @@ fn bench_throughput_secure(c: &mut Criterion) {
                 let config = SessionConfig::default();
 
                 let (server_ch, client_ch) = tokio::join!(
-                    SecureChannel::accept_with_attestation(server, &provider, &verifier, config.clone()),
+                    SecureChannel::accept_with_attestation(
+                        server,
+                        &provider,
+                        &verifier,
+                        config.clone()
+                    ),
                     SecureChannel::connect_with_attestation(client, &provider, &verifier, config),
                 );
                 let mut server_ch = server_ch.unwrap();

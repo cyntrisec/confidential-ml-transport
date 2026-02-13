@@ -173,9 +173,13 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch =
-            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
-                .await?;
+        let mut ch = SecureChannel::connect_with_attestation(
+            transport,
+            provider.as_ref(),
+            verifier.as_ref(),
+            config.clone(),
+        )
+        .await?;
         ch.send(Bytes::from_static(b"ECHO:warmup")).await?;
         let _ = ch.recv().await?;
         ch.shutdown().await.ok();
@@ -195,9 +199,13 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch =
-            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
-                .await?;
+        let mut ch = SecureChannel::connect_with_attestation(
+            transport,
+            provider.as_ref(),
+            verifier.as_ref(),
+            config.clone(),
+        )
+        .await?;
         let elapsed = start.elapsed();
         handshake_times.push(elapsed);
 
@@ -221,9 +229,13 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch =
-            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
-                .await?;
+        let mut ch = SecureChannel::connect_with_attestation(
+            transport,
+            provider.as_ref(),
+            verifier.as_ref(),
+            config.clone(),
+        )
+        .await?;
 
         let payload = "ECHO:".to_string() + &"x".repeat(64); // 64-byte echo payload
         for i in 0..args.rtt_rounds {
@@ -259,9 +271,13 @@ async fn main() -> Result<()> {
         #[cfg(feature = "vsock-nitro")]
         let transport = connect(args.cid, args.port).await?;
 
-        let mut ch =
-            SecureChannel::connect_with_attestation(transport, provider.as_ref(), verifier.as_ref(), config.clone())
-                .await?;
+        let mut ch = SecureChannel::connect_with_attestation(
+            transport,
+            provider.as_ref(),
+            verifier.as_ref(),
+            config.clone(),
+        )
+        .await?;
 
         let text = "The quick brown fox jumps over the lazy dog";
         for i in 0..args.inference_rounds {

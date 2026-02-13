@@ -68,13 +68,20 @@ async fn tdx_handshake_integration() {
     let server_provider = SyntheticTdxProvider::new(mrtd);
     let server_verifier = TdxVerifier::new(None);
     let server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &server_provider, &server_verifier, config).await
+        SecureChannel::accept_with_attestation(
+            server_io,
+            &server_provider,
+            &server_verifier,
+            config,
+        )
+        .await
     });
 
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
-        .await
-        .expect("client handshake should succeed");
+    let mut client =
+        SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
+            .await
+            .expect("client handshake should succeed");
 
     let mut server = server_handle
         .await
@@ -115,13 +122,20 @@ async fn tdx_handshake_with_measurement_verification() {
     let server_provider = SyntheticTdxProvider::new(mrtd);
     let server_verifier = TdxVerifier::new(Some(mrtd.to_vec()));
     let server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &server_provider, &server_verifier, config).await
+        SecureChannel::accept_with_attestation(
+            server_io,
+            &server_provider,
+            &server_verifier,
+            config,
+        )
+        .await
     });
 
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
-        .await
-        .expect("handshake with correct MRTD should succeed");
+    let mut client =
+        SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
+            .await
+            .expect("handshake with correct MRTD should succeed");
 
     let mut server = server_handle.await.unwrap().unwrap();
 
@@ -146,11 +160,19 @@ async fn tdx_handshake_rejects_wrong_measurement() {
     let server_provider = SyntheticTdxProvider::new(mrtd);
     let server_verifier = TdxVerifier::new(Some(vec![0xDD; 48]));
     let _server_handle = tokio::spawn(async move {
-        SecureChannel::accept_with_attestation(server_io, &server_provider, &server_verifier, config).await
+        SecureChannel::accept_with_attestation(
+            server_io,
+            &server_provider,
+            &server_verifier,
+            config,
+        )
+        .await
     });
 
     let client_config = SessionConfig::default();
-    let result = SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config).await;
+    let result =
+        SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
+            .await;
 
     assert!(result.is_err(), "handshake should fail on MRTD mismatch");
 }

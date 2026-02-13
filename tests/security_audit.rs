@@ -179,7 +179,13 @@ async fn handshake_timeout_triggers() {
 
     let verifier = MockVerifier::new();
     let client_provider = MockProvider::new();
-    let result = SecureChannel::connect_with_attestation(client_transport, &client_provider, &verifier, config).await;
+    let result = SecureChannel::connect_with_attestation(
+        client_transport,
+        &client_provider,
+        &verifier,
+        config,
+    )
+    .await;
 
     assert!(result.is_err());
     let err = format!("{}", result.err().unwrap());
@@ -205,18 +211,26 @@ async fn handshake_within_timeout_succeeds() {
     let client_config = server_config.clone();
 
     let server_handle = tokio::spawn(async move {
-        let mut channel =
-            SecureChannel::accept_with_attestation(server_transport, &provider, &MockVerifier::new(), server_config)
-                .await
-                .unwrap();
+        let mut channel = SecureChannel::accept_with_attestation(
+            server_transport,
+            &provider,
+            &MockVerifier::new(),
+            server_config,
+        )
+        .await
+        .unwrap();
         channel.shutdown().await.unwrap();
     });
 
     let client_handle = tokio::spawn(async move {
-        let mut channel =
-            SecureChannel::connect_with_attestation(client_transport, &MockProvider::new(), &verifier, client_config)
-                .await
-                .unwrap();
+        let mut channel = SecureChannel::connect_with_attestation(
+            client_transport,
+            &MockProvider::new(),
+            &verifier,
+            client_config,
+        )
+        .await
+        .unwrap();
         let msg = channel.recv().await.unwrap();
         assert!(matches!(msg, Message::Shutdown));
     });

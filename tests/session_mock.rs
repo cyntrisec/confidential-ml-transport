@@ -198,10 +198,17 @@ async fn require_measurements_rejects_none() {
     let provider = MockProvider::new();
 
     // Initiator should fail before even starting the handshake.
-    let result =
-        SecureChannel::connect_with_attestation(client_transport, &provider, &verifier, config.clone())
-            .await;
-    assert!(result.is_err(), "expected connect to fail with require_measurements");
+    let result = SecureChannel::connect_with_attestation(
+        client_transport,
+        &provider,
+        &verifier,
+        config.clone(),
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "expected connect to fail with require_measurements"
+    );
     let err = result.err().unwrap();
     assert!(
         format!("{err}").contains("require_measurements"),
@@ -212,7 +219,10 @@ async fn require_measurements_rejects_none() {
     let result =
         SecureChannel::accept_with_attestation(server_transport, &provider, &verifier, config)
             .await;
-    assert!(result.is_err(), "expected accept to fail with require_measurements");
+    assert!(
+        result.is_err(),
+        "expected accept to fail with require_measurements"
+    );
     let err = result.err().unwrap();
     assert!(
         format!("{err}").contains("require_measurements"),
@@ -302,7 +312,10 @@ async fn mutual_attestation_both_sides_receive_attestation() {
             "responder should receive initiator attestation"
         );
         let att = peer_att.unwrap();
-        assert!(att.public_key.is_some(), "attestation should contain public key");
+        assert!(
+            att.public_key.is_some(),
+            "attestation should contain public key"
+        );
 
         channel
     });
@@ -326,7 +339,10 @@ async fn mutual_attestation_both_sides_receive_attestation() {
             "initiator should receive responder attestation"
         );
         let att = peer_att.unwrap();
-        assert!(att.public_key.is_some(), "attestation should contain public key");
+        assert!(
+            att.public_key.is_some(),
+            "attestation should contain public key"
+        );
 
         channel
     });

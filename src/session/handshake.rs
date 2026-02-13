@@ -112,9 +112,9 @@ fn parse_hello_with_attestation(
             "attestation document too large: {doc_len} bytes (max {MAX_ATTESTATION_DOC_SIZE})"
         )));
     }
-    let expected_total = MIN_LEN
-        .checked_add(doc_len)
-        .ok_or_else(|| SessionError::HandshakeFailed(format!("{role_name} hello length overflow")))?;
+    let expected_total = MIN_LEN.checked_add(doc_len).ok_or_else(|| {
+        SessionError::HandshakeFailed(format!("{role_name} hello length overflow"))
+    })?;
     if payload.len() != expected_total {
         return Err(SessionError::HandshakeFailed(format!(
             "{role_name} hello: expected {expected_total} bytes, got {}",
@@ -350,7 +350,12 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
         "peer attestation measurements"
     );
 
-    verify_attestation(&verified, &resp_pk_bytes, expected_measurements, "initiator")?;
+    verify_attestation(
+        &verified,
+        &resp_pk_bytes,
+        expected_measurements,
+        "initiator",
+    )?;
 
     // Combine nonces.
     let mut combined_nonce = [0u8; 32];

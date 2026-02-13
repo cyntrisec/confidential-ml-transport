@@ -23,10 +23,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let provider = MockProvider::new();
         let verifier = MockVerifier::new();
-        let mut channel =
-            SecureChannel::connect_with_attestation(stream, &provider, &verifier, SessionConfig::default())
-                .await
-                .unwrap();
+        let mut channel = SecureChannel::connect_with_attestation(
+            stream,
+            &provider,
+            &verifier,
+            SessionConfig::default(),
+        )
+        .await
+        .unwrap();
 
         println!("[client] connected and handshake complete");
 
@@ -55,8 +59,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = MockProvider::new();
     let verifier = MockVerifier::new();
-    let mut channel =
-        SecureChannel::accept_with_attestation(stream, &provider, &verifier, SessionConfig::default()).await?;
+    let mut channel = SecureChannel::accept_with_attestation(
+        stream,
+        &provider,
+        &verifier,
+        SessionConfig::default(),
+    )
+    .await?;
 
     println!("[server] handshake complete");
 

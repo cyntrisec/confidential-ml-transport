@@ -79,9 +79,14 @@ async fn sev_snp_handshake_integration() {
 
     let client_config = SessionConfig::default();
     let client_provider = SyntheticSevSnpProvider::new(measurement);
-    let mut client = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config)
-        .await
-        .expect("client handshake should succeed");
+    let mut client = SecureChannel::connect_with_attestation(
+        client_io,
+        &client_provider,
+        &verifier,
+        client_config,
+    )
+    .await
+    .expect("client handshake should succeed");
 
     let mut server = server_handle
         .await
@@ -126,9 +131,14 @@ async fn sev_snp_handshake_with_measurement_verification() {
 
     let client_config = SessionConfig::default();
     let client_provider = SyntheticSevSnpProvider::new(measurement);
-    let mut client = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config)
-        .await
-        .expect("handshake with correct measurement should succeed");
+    let mut client = SecureChannel::connect_with_attestation(
+        client_io,
+        &client_provider,
+        &verifier,
+        client_config,
+    )
+    .await
+    .expect("handshake with correct measurement should succeed");
 
     let mut server = server_handle.await.unwrap().unwrap();
 
@@ -157,7 +167,13 @@ async fn sev_snp_handshake_rejects_wrong_measurement() {
 
     let client_config = SessionConfig::default();
     let client_provider = SyntheticSevSnpProvider::new(measurement);
-    let result = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config).await;
+    let result = SecureChannel::connect_with_attestation(
+        client_io,
+        &client_provider,
+        &verifier,
+        client_config,
+    )
+    .await;
 
     assert!(
         result.is_err(),

@@ -178,9 +178,14 @@ async fn nitro_verifier_handshake_integration() {
 
     let client_provider = MockProvider::new();
     let client_config = SessionConfig::default();
-    let mut client = SecureChannel::connect_with_attestation(client_io, &client_provider, &verifier, client_config)
-        .await
-        .expect("client handshake should succeed");
+    let mut client = SecureChannel::connect_with_attestation(
+        client_io,
+        &client_provider,
+        &verifier,
+        client_config,
+    )
+    .await
+    .expect("client handshake should succeed");
 
     let mut server = server_handle
         .await

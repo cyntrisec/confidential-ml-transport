@@ -70,9 +70,14 @@ pub async fn run_client_proxy(
             // including on panic (no explicit drop needed).
             let _permit = permit;
             tracing::debug!(%peer_addr, "accepted plaintext connection");
-            if let Err(e) =
-                handle_client_connection(stream, provider.as_ref(), verifier.as_ref(), enclave_addr, session_config)
-                    .await
+            if let Err(e) = handle_client_connection(
+                stream,
+                provider.as_ref(),
+                verifier.as_ref(),
+                enclave_addr,
+                session_config,
+            )
+            .await
             {
                 tracing::warn!(%peer_addr, error = %e, "connection handler error");
             }
