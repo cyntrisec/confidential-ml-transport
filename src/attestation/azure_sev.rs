@@ -180,11 +180,14 @@ impl AttestationVerifier for AzureSevSnpVerifier {
         let (public_key, nonce) = extract_user_data_from_var_data(var_data)?;
 
         // Step 7: Validate certificate chain and verify report signature.
-        if !cert_chain_bytes.is_empty() {
-            verify_report_with_certs(&report, report_bytes, &cert_chain_bytes)?;
-        } else {
-            tracing::warn!("no certificate chain provided, skipping chain verification");
+        if cert_chain_bytes.is_empty() {
+            return Err(AttestError::VerificationFailed(
+                "certificate chain is empty — cannot verify report signature. \
+                 An attacker could forge attestation reports without a valid certificate chain."
+                    .into(),
+            ));
         }
+        verify_report_with_certs(&report, report_bytes, &cert_chain_bytes)?;
 
         // Step 8: Check measurement if expected.
         let mut measurements = BTreeMap::new();
@@ -405,7 +408,64 @@ fn verify_report_with_certs(
         AttestError::VerificationFailed(format!("report signature verification failed: {e}"))
     })?;
 
+    // Verify the ARK is a known AMD root (Milan, Genoa, or Turin).
+    // Without this check, an attacker could forge the entire chain with
+    // a self-signed ARK of their own creation.
+    verify_ark_is_known_amd_root(&pem_certs[2])?;
+
     Ok(())
+}
+
+/// Verify that the ARK certificate matches a known AMD root.
+///
+/// Compares the provided ARK's DER-encoded public key against the built-in
+/// AMD ARK certificates for Milan, Genoa, and Turin. Rejects chains rooted
+/// at unknown (potentially attacker-generated) ARKs.
+fn verify_ark_is_known_amd_root(ark_der: &[u8]) -> Result<(), AttestError> {
+    use openssl::x509::X509;
+
+    let peer_ark = X509::from_der(ark_der).map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to parse ARK certificate: {e}"))
+    })?;
+    let peer_ark_pubkey = peer_ark.public_key().map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to extract ARK public key: {e}"))
+    })?;
+    let peer_ark_pubkey_der = peer_ark_pubkey.public_key_to_der().map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to encode ARK public key to DER: {e}"))
+    })?;
+
+    let known_roots: &[(&str, &[u8])] = &[
+        ("Milan", sev::certs::snp::builtin::milan::ARK),
+        ("Genoa", sev::certs::snp::builtin::genoa::ARK),
+        ("Turin", sev::certs::snp::builtin::turin::ARK),
+    ];
+
+    for (platform, ark_pem) in known_roots {
+        let known_ark = X509::from_pem(ark_pem).map_err(|e| {
+            AttestError::VerificationFailed(format!("failed to parse built-in {platform} ARK: {e}"))
+        })?;
+        let known_pubkey = known_ark.public_key().map_err(|e| {
+            AttestError::VerificationFailed(format!(
+                "failed to extract built-in {platform} ARK public key: {e}"
+            ))
+        })?;
+        let known_pubkey_der = known_pubkey.public_key_to_der().map_err(|e| {
+            AttestError::VerificationFailed(format!(
+                "failed to encode built-in {platform} ARK public key: {e}"
+            ))
+        })?;
+
+        if peer_ark_pubkey_der == known_pubkey_der {
+            tracing::info!(platform, "ARK matches known AMD root");
+            return Ok(());
+        }
+    }
+
+    Err(AttestError::VerificationFailed(
+        "ARK certificate does not match any known AMD root (Milan, Genoa, Turin). \
+         The certificate chain may have been forged."
+            .into(),
+    ))
 }
 
 /// Parse PEM-encoded certificates into DER byte vectors.

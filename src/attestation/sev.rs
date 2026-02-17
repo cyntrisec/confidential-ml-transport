@@ -308,10 +308,11 @@ fn verify_report_with_certs(
     cert_chain_bytes: &[u8],
 ) -> Result<(), AttestError> {
     if cert_chain_bytes.is_empty() {
-        // No certificate chain available — skip chain verification.
-        // This path is used in testing with synthetic reports.
-        tracing::warn!("no certificate chain provided, skipping chain verification");
-        return Ok(());
+        return Err(AttestError::VerificationFailed(
+            "certificate chain is empty — cannot verify report signature. \
+             An attacker could forge attestation reports without a valid certificate chain."
+                .into(),
+        ));
     }
 
     // Parse concatenated DER certificates.
@@ -345,8 +346,66 @@ fn verify_report_with_certs(
         AttestError::VerificationFailed(format!("report signature verification failed: {e}"))
     })?;
 
+    // Verify the ARK is a known AMD root (Milan, Genoa, or Turin).
+    // Without this check, an attacker could forge the entire chain with
+    // a self-signed ARK of their own creation.
+    verify_ark_is_known_amd_root(&certs[0])?;
+
     let _ = report_bytes; // Used indirectly via report
     Ok(())
+}
+
+/// Verify that the ARK certificate matches a known AMD root.
+///
+/// Compares the provided ARK's DER-encoded public key against the built-in
+/// AMD ARK certificates for Milan, Genoa, and Turin. Rejects chains rooted
+/// at unknown (potentially attacker-generated) ARKs.
+fn verify_ark_is_known_amd_root(ark_der: &[u8]) -> Result<(), AttestError> {
+    use openssl::x509::X509;
+
+    let peer_ark = X509::from_der(ark_der).map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to parse ARK certificate: {e}"))
+    })?;
+    let peer_ark_pubkey = peer_ark.public_key().map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to extract ARK public key: {e}"))
+    })?;
+    let peer_ark_pubkey_der = peer_ark_pubkey.public_key_to_der().map_err(|e| {
+        AttestError::VerificationFailed(format!("failed to encode ARK public key to DER: {e}"))
+    })?;
+
+    // Compare against built-in AMD roots for all supported processor generations.
+    let known_roots: &[(&str, &[u8])] = &[
+        ("Milan", sev::certs::snp::builtin::milan::ARK),
+        ("Genoa", sev::certs::snp::builtin::genoa::ARK),
+        ("Turin", sev::certs::snp::builtin::turin::ARK),
+    ];
+
+    for (platform, ark_pem) in known_roots {
+        let known_ark = X509::from_pem(ark_pem).map_err(|e| {
+            AttestError::VerificationFailed(format!("failed to parse built-in {platform} ARK: {e}"))
+        })?;
+        let known_pubkey = known_ark.public_key().map_err(|e| {
+            AttestError::VerificationFailed(format!(
+                "failed to extract built-in {platform} ARK public key: {e}"
+            ))
+        })?;
+        let known_pubkey_der = known_pubkey.public_key_to_der().map_err(|e| {
+            AttestError::VerificationFailed(format!(
+                "failed to encode built-in {platform} ARK public key: {e}"
+            ))
+        })?;
+
+        if peer_ark_pubkey_der == known_pubkey_der {
+            tracing::info!(platform, "ARK matches known AMD root");
+            return Ok(());
+        }
+    }
+
+    Err(AttestError::VerificationFailed(
+        "ARK certificate does not match any known AMD root (Milan, Genoa, Turin). \
+         The certificate chain may have been forged."
+            .into(),
+    ))
 }
 
 /// Parse concatenated DER certificates into individual certificate byte slices.
@@ -486,61 +545,56 @@ mod tests {
         }
     }
 
-    /// Serialize a report to wire format with no cert chain.
-    fn synthetic_doc(report: &sev::firmware::guest::AttestationReport) -> AttestationDocument {
-        use sev::parser::ByteParser;
-        let report_bytes = report.to_bytes().unwrap().to_vec();
-        AttestationDocument::new(encode_sev_snp_document(&report_bytes, &[]))
-    }
-
-    #[tokio::test]
-    async fn verifier_extracts_report_data() {
+    /// Test report field extraction directly (without going through the full
+    /// verifier, since the verifier now correctly rejects empty cert chains).
+    #[test]
+    fn report_extracts_report_data() {
         let mut rd = [0u8; 64];
         rd[..32].copy_from_slice(&[0x42; 32]); // public key
         rd[32..64].copy_from_slice(&[0x37; 32]); // nonce
         let report = build_test_report(rd, [0xEE; 48]);
-        let doc = synthetic_doc(&report);
 
-        let verifier = SevSnpVerifier::new(None);
-        let verified = verifier.verify(&doc).await.unwrap();
-
-        assert_eq!(verified.public_key.as_deref(), Some([0x42; 32].as_ref()));
-        assert_eq!(verified.nonce.as_deref(), Some([0x37; 32].as_ref()));
-        assert_eq!(verified.measurements[&0], vec![0xEE; 48]);
+        assert_eq!(&report.report_data[..32], &[0x42; 32]);
+        assert_eq!(&report.report_data[32..64], &[0x37; 32]);
+        assert_eq!(report.measurement, [0xEE; 48]);
     }
 
-    #[tokio::test]
-    async fn verifier_rejects_measurement_mismatch() {
+    #[test]
+    fn report_measurement_mismatch_detected() {
         let report = build_test_report([0u8; 64], [0xEE; 48]);
-        let doc = synthetic_doc(&report);
-
-        let verifier = SevSnpVerifier::new(Some(vec![0xFF; 48]));
-        let result = verifier.verify(&doc).await;
-        assert!(result.is_err());
-        let err = format!("{}", result.unwrap_err());
-        assert!(err.contains("MEASUREMENT mismatch"), "error: {err}");
+        let expected = vec![0xFF; 48];
+        assert_ne!(report.measurement.as_slice(), expected.as_slice());
     }
 
-    #[tokio::test]
-    async fn verifier_accepts_matching_measurement() {
+    #[test]
+    fn report_measurement_match_detected() {
         let report = build_test_report([0u8; 64], [0xAB; 48]);
-        let doc = synthetic_doc(&report);
+        let expected = vec![0xAB; 48];
+        assert_eq!(report.measurement.as_slice(), expected.as_slice());
+    }
 
-        let verifier = SevSnpVerifier::new(Some(vec![0xAB; 48]));
-        let verified = verifier.verify(&doc).await.unwrap();
-        assert_eq!(verified.measurements[&0], vec![0xAB; 48]);
+    #[test]
+    fn report_zero_pk_and_nonce() {
+        let report = build_test_report([0u8; 64], [0u8; 48]);
+        assert!(report.report_data[..32].iter().all(|&b| b == 0));
+        assert!(report.report_data[32..64].iter().all(|&b| b == 0));
     }
 
     #[tokio::test]
-    async fn verifier_none_for_zero_pk_and_nonce() {
+    async fn verifier_rejects_empty_cert_chain() {
+        use sev::parser::ByteParser;
         let report = build_test_report([0u8; 64], [0u8; 48]);
-        let doc = synthetic_doc(&report);
+        let report_bytes = report.to_bytes().unwrap().to_vec();
+        let doc = AttestationDocument::new(encode_sev_snp_document(&report_bytes, &[]));
 
         let verifier = SevSnpVerifier::new(None);
-        let verified = verifier.verify(&doc).await.unwrap();
-
-        assert!(verified.public_key.is_none());
-        assert!(verified.nonce.is_none());
+        let result = verifier.verify(&doc).await;
+        assert!(result.is_err(), "verifier must reject empty cert chain");
+        let err = format!("{}", result.unwrap_err());
+        assert!(
+            err.contains("certificate chain is empty"),
+            "error should mention empty chain: {err}"
+        );
     }
 
     #[test]

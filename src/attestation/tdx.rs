@@ -48,6 +48,22 @@ const ECDSA_SIG_SIZE: usize = 64;
 /// Size of ECDSA P-256 public key (x || y, 32 + 32 bytes).
 const ECDSA_PUBKEY_SIZE: usize = 64;
 
+/// RAII guard that removes a configfs-tsm report entry on drop.
+///
+/// Ensures cleanup happens even if the attestation request fails partway
+/// through (e.g., inblob write succeeds but outblob read fails).
+#[cfg(target_os = "linux")]
+struct TsmEntryGuard {
+    path: std::path::PathBuf,
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for TsmEntryGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// Attestation provider that requests TDX quotes via the configfs-tsm interface.
 ///
 /// Only works inside a TDX Trust Domain where the configfs-tsm filesystem is
@@ -137,6 +153,11 @@ impl AttestationProvider for TdxProvider {
             ))
         })?;
 
+        // RAII guard ensures cleanup even if inblob/outblob operations fail.
+        let _guard = TsmEntryGuard {
+            path: entry_path.clone(),
+        };
+
         // Write REPORTDATA to inblob.
         fs::write(entry_path.join("inblob"), report_data)
             .map_err(|e| AttestError::GenerationFailed(format!("failed to write inblob: {e}")))?;
@@ -145,8 +166,7 @@ impl AttestationProvider for TdxProvider {
         let quote = fs::read(entry_path.join("outblob"))
             .map_err(|e| AttestError::GenerationFailed(format!("failed to read outblob: {e}")))?;
 
-        // Clean up the entry.
-        let _ = fs::remove_dir_all(&entry_path);
+        // Guard will clean up on drop (including normal exit).
 
         let raw = encode_tdx_document(&quote);
         Ok(AttestationDocument::new(raw))
@@ -210,6 +230,19 @@ impl AttestationVerifier for TdxVerifier {
         let body = TdxQuoteBody::parse(&quote[HEADER_SIZE..HEADER_SIZE + body_size])?;
 
         // Step 5: Verify ECDSA-P256 signature.
+        //
+        // WARNING: This verifies that the quote's signature is valid for the
+        // public key embedded IN the quote itself. It does NOT verify that
+        // the signing key belongs to a genuine Intel Quoting Enclave (QE).
+        // Full DCAP collateral verification (PCK cert chain, QE identity,
+        // TCB info) is required for production use — see the `tdx-dcap`
+        // feature (not yet implemented).
+        tracing::warn!(
+            "TDX quote signature verified against embedded key only — \
+             DCAP collateral verification is not implemented. \
+             This verifier should NOT be used in production without \
+             additional trust anchoring."
+        );
         let sig_section_offset = HEADER_SIZE + body_size;
         verify_ecdsa_signature(&quote, sig_section_offset, HEADER_SIZE + body_size)?;
 

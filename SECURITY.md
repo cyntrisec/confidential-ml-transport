@@ -86,7 +86,7 @@ The transparent proxy (both client and server) limits concurrent connections via
 
 ## Known Limitations
 
-- **One-way attestation**: Only the responder (server/enclave) is attested. For mutual attestation, perform an application-level challenge-response after session establishment.
+- **TDX verifier is not trust-anchored (experimental)**: The TDX verifier (`TdxVerifier`) checks ECDSA-P256 signature validity, but the verification key is extracted from the quote itself. Without DCAP collateral verification (PCK certificate chain, QE identity, TCB info from Intel), a synthetic/self-issued quote can pass verification. Full DCAP support is planned under the `tdx-dcap` feature. **Do not use `TdxVerifier` in production without additional trust anchoring.**
 - **No transport binding**: The channel does not bind to a specific transport address (IP, VSock CID). Perform transport-level identity checks separately if required.
 - **Proxy is TCP-only**: The transparent proxy supports TCP backends only.
 
@@ -138,5 +138,10 @@ We follow coordinated disclosure:
 
 | Version | Fix | Severity |
 |---------|-----|----------|
+| 0.5.0 | SEV-SNP/Azure verifiers now reject empty certificate chains (was accepting forged attestations) | Critical |
+| 0.5.0 | SEV-SNP/Azure verifiers now pin ARK to known AMD roots (Milan/Genoa/Turin) | High |
+| 0.5.0 | TDX verifier emits explicit warning about lack of DCAP trust anchoring | Medium |
+| 0.5.0 | Handshake read buffer reduced from 32 MiB to ~65 KiB to prevent memory DoS | Medium |
+| 0.5.0 | TDX provider uses RAII guard for configfs-tsm entry cleanup on error | Low |
 | 0.1.2 | Constant-time confirmation hash comparison (`subtle::ct_eq`) to prevent timing side-channel | Medium |
 | 0.1.2 | Semaphore permit panic safety to prevent connection slot exhaustion | Low |

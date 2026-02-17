@@ -232,11 +232,14 @@ async fn send_frame<T: AsyncWrite + Unpin>(
 /// Maximum read buffer size during handshake.
 ///
 /// Handshake messages are small (initiator/responder hello ~69B + attestation doc,
-/// confirmation ~33B). The attestation doc is the largest variable component (typically <16 KB
-/// for Nitro/SEV-SNP). We cap at `MAX_PAYLOAD_SIZE + HEADER_SIZE + margin` to match the channel's
-/// strategy, but in practice handshake reads should never approach this limit.
-const HANDSHAKE_MAX_READ_BUF: usize =
-    crate::frame::MAX_PAYLOAD_SIZE as usize + crate::frame::HEADER_SIZE + 4096;
+/// confirmation ~33B). The attestation doc is the largest variable component, capped at
+/// `MAX_ATTESTATION_DOC_SIZE` (64 KiB). We size the buffer to accommodate the largest
+/// possible handshake frame plus margin for framing overhead.
+///
+/// Previous value was ~32 MiB (matched the channel's `MAX_PAYLOAD_SIZE`), which allowed
+/// an attacker to force large allocations per connection during the handshake phase
+/// before the attestation doc size check could reject the data.
+const HANDSHAKE_MAX_READ_BUF: usize = MAX_ATTESTATION_DOC_SIZE + crate::frame::HEADER_SIZE + 1024;
 
 async fn recv_frame<T: AsyncRead + Unpin>(
     transport: &mut T,
