@@ -43,7 +43,9 @@ pub use attestation::nitro::{NitroProvider, NitroVerifier};
 pub use attestation::sev::{SevSnpProvider, SevSnpVerifier};
 
 #[cfg(feature = "tdx")]
-pub use attestation::tdx::{TdxProvider, TdxVerifier};
+pub use attestation::tdx::{
+    TdxCollateral, TdxProvider, TdxVerifier, TdxVerifyError, TdxVerifyPolicy,
+};
 
 #[cfg(feature = "azure-sev-snp")]
 pub use attestation::azure_sev::{AzureSevSnpProvider, AzureSevSnpVerifier};

@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::codec::{Decoder, Encoder};
+use zeroize::Zeroize;
 
 use crate::attestation::types::{AttestationDocument, ExpectedMeasurements, VerifiedAttestation};
 use crate::attestation::{AttestationProvider, AttestationVerifier};
@@ -29,6 +30,13 @@ pub struct HandshakeResult {
     /// Residual bytes read from the transport but not consumed by the handshake.
     /// Must be prepended to the channel's read buffer.
     pub residual: BytesMut,
+}
+
+impl Drop for HandshakeResult {
+    fn drop(&mut self) {
+        self.session_id.zeroize();
+        self.residual.as_mut().zeroize();
+    }
 }
 
 // -- Wire helpers --

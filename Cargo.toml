@@ -32,6 +32,7 @@ tokio-vsock = { version = "0.7", optional = true }
 coset = { version = "0.3", optional = true }
 ciborium = { version = "0.2", optional = true }
 openssl = { version = "0.10", optional = true }
+openssl-sys = { version = "0.9", optional = true }
 aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
 serde_bytes = { version = "0.11", optional = true }
 sev = { version = "7", default-features = false, features = ["snp", "openssl"], optional = true }
@@ -47,10 +48,12 @@ vsock = ["dep:tokio-vsock"]
 nitro = ["dep:coset", "dep:ciborium", "dep:openssl", "dep:aws-nitro-enclaves-nsm-api", "dep:serde_bytes"]
 sev-snp = ["dep:sev", "dep:openssl"]
 azure-sev-snp = ["dep:az-cvm-vtpm", "dep:tss-esapi", "dep:sev", "dep:openssl", "dep:serde_json"]
-tdx = ["dep:openssl"]
+tdx = ["dep:openssl", "dep:openssl-sys"]
 
 [dev-dependencies]
 proptest = "1.4"
+openssl-sys = "0.9"
+foreign-types-shared = "0.1"
 tokio = { version = "1.38", features = ["full", "test-util"] }
 criterion = { version = "0.5", features = ["async_tokio"] }
 serde_json = "1"

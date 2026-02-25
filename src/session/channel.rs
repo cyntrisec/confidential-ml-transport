@@ -1,6 +1,7 @@
 use bytes::{Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::codec::{Decoder, Encoder};
+use zeroize::Zeroize;
 
 use std::future::Future;
 
@@ -69,7 +70,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         config: SessionConfig,
     ) -> Result<Self, Error> {
         config.validate_measurements()?;
-        let result = tokio::time::timeout(
+        let mut result = tokio::time::timeout(
             config.handshake_timeout,
             handshake::initiate(
                 &mut transport,
@@ -83,13 +84,17 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
 
         let sealer = SealingContext::new(&result.send_key, result.session_id);
         let opener = OpeningContext::new(&result.recv_key, result.session_id);
-        let peer_attestation = result.peer_attestation;
+        // Use std::mem::take to move fields out of the Drop-implementing
+        // HandshakeResult. The remaining fields (send_key, recv_key, session_id)
+        // will be zeroized when `result` is dropped.
+        let peer_attestation = std::mem::take(&mut result.peer_attestation);
+        let residual = std::mem::take(&mut result.residual);
 
         Ok(Self {
             transport,
             sealer,
             opener,
-            read_buf: result.residual,
+            read_buf: residual,
             codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
             peer_attestation,
@@ -140,7 +145,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         config: SessionConfig,
     ) -> Result<Self, Error> {
         config.validate_measurements()?;
-        let result = tokio::time::timeout(
+        let mut result = tokio::time::timeout(
             config.handshake_timeout,
             handshake::respond(
                 &mut transport,
@@ -154,13 +159,14 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
 
         let sealer = SealingContext::new(&result.send_key, result.session_id);
         let opener = OpeningContext::new(&result.recv_key, result.session_id);
-        let peer_attestation = result.peer_attestation;
+        let peer_attestation = std::mem::take(&mut result.peer_attestation);
+        let residual = std::mem::take(&mut result.residual);
 
         Ok(Self {
             transport,
             sealer,
             opener,
-            read_buf: result.residual,
+            read_buf: residual,
             codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
             peer_attestation,
@@ -218,6 +224,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         let mut tensor_buf = BytesMut::new();
         tensor.encode(&mut tensor_buf)?;
         let frame = self.seal_frame(FrameType::Tensor, &tensor_buf, Flags::TENSOR_PAYLOAD)?;
+        // Zeroize the plaintext tensor buffer before it is dropped.
+        tensor_buf.as_mut().zeroize();
         self.send_frame(frame).await
     }
 
@@ -309,5 +317,74 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
                 return Err(SessionError::Closed.into());
             }
         }
+    }
+}
+
+impl<T> Drop for SecureChannel<T> {
+    fn drop(&mut self) {
+        self.read_buf.as_mut().zeroize();
+    }
+}
+
+#[cfg(all(test, feature = "mock"))]
+mod tests {
+    use super::*;
+    use crate::attestation::mock::{MockProvider, MockVerifier};
+
+    /// Smoke test: establish a SecureChannel pair over duplex, exchange data,
+    /// and drop both ends without panic (exercises the Drop impl).
+    #[tokio::test]
+    async fn secure_channel_drop_does_not_panic() {
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let provider = MockProvider::new();
+        let verifier = MockVerifier::new();
+        let config = SessionConfig::default();
+
+        let (client, server) = tokio::try_join!(
+            SecureChannel::connect_with_attestation(
+                client_io,
+                &provider,
+                &verifier,
+                config.clone(),
+            ),
+            SecureChannel::accept_with_attestation(server_io, &provider, &verifier, config),
+        )
+        .expect("handshake should succeed");
+
+        // Drop both channels — the Drop impl must not panic.
+        drop(client);
+        drop(server);
+    }
+
+    /// Verify that the channel Drop impl zeroizes read_buf even after data exchange.
+    #[tokio::test]
+    async fn secure_channel_drop_after_data_exchange() {
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let provider = MockProvider::new();
+        let verifier = MockVerifier::new();
+        let config = SessionConfig::default();
+
+        let (mut client, mut server) = tokio::try_join!(
+            SecureChannel::connect_with_attestation(
+                client_io,
+                &provider,
+                &verifier,
+                config.clone(),
+            ),
+            SecureChannel::accept_with_attestation(server_io, &provider, &verifier, config),
+        )
+        .expect("handshake should succeed");
+
+        // Send some data so the read_buf accumulates bytes.
+        client
+            .send(Bytes::from_static(b"hello confidential world"))
+            .await
+            .unwrap();
+        let msg = server.recv().await.unwrap();
+        assert!(matches!(msg, Message::Data(_)));
+
+        // Drop — exercises the zeroization path with a non-empty read_buf history.
+        drop(server);
+        drop(client);
     }
 }
