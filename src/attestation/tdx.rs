@@ -122,6 +122,8 @@ pub enum TdxVerifyError {
     // -- T3_CHAIN: Trust chain (DCAP collateral) --
     /// TDX-CHAIN-001: Missing DCAP collateral bundle.
     CollateralMissing,
+    /// TDX-CHAIN-001b: Collateral present but incomplete (missing QE Identity or TCB Info).
+    CollateralIncomplete { missing: String },
     /// TDX-CHAIN-002: Collateral expired or stale (nextUpdate passed).
     CollateralStale(String),
     /// TDX-CHAIN-003: PCK certificate chain invalid (wrong issuer/root).
@@ -172,6 +174,9 @@ impl fmt::Display for TdxVerifyError {
                 )
             }
             Self::CollateralMissing => write!(f, "TDX_COLLATERAL_MISSING"),
+            Self::CollateralIncomplete { missing } => {
+                write!(f, "TDX_COLLATERAL_INCOMPLETE: missing {missing}")
+            }
             Self::CollateralStale(msg) => write!(f, "TDX_COLLATERAL_STALE: {msg}"),
             Self::PckChainInvalid(msg) => write!(f, "TDX_PCK_CHAIN_INVALID: {msg}"),
             Self::QeIdentityInvalid(msg) => write!(f, "TDX_QE_IDENTITY_INVALID: {msg}"),
@@ -232,6 +237,7 @@ impl TdxVerifyError {
             Self::QuoteSigInvalid(_) => "TDX_QUOTE_SIG_INVALID",
             Self::ReportdataBindingMismatch { .. } => "TDX_REPORTDATA_BINDING_MISMATCH",
             Self::CollateralMissing => "TDX_COLLATERAL_MISSING",
+            Self::CollateralIncomplete { .. } => "TDX_COLLATERAL_INCOMPLETE",
             Self::CollateralStale(_) => "TDX_COLLATERAL_STALE",
             Self::PckChainInvalid(_) => "TDX_PCK_CHAIN_INVALID",
             Self::QeIdentityInvalid(_) => "TDX_QE_IDENTITY_INVALID",
@@ -253,6 +259,7 @@ impl TdxVerifyError {
             Self::QuoteParseFailed(_) | Self::QuoteUnsupportedFormat(_) => "T1_PARSE",
             Self::QuoteSigInvalid(_) | Self::ReportdataBindingMismatch { .. } => "T2_CRYPTO",
             Self::CollateralMissing
+            | Self::CollateralIncomplete { .. }
             | Self::CollateralStale(_)
             | Self::PckChainInvalid(_)
             | Self::QeIdentityInvalid(_)
@@ -825,12 +832,24 @@ impl TdxVerifier {
                 .collateral
                 .as_ref()
                 .ok_or(TdxVerifyError::CollateralMissing)?;
+            // Step 0: Reject partial DCAP bundles early — one of (qe_identity,
+            // tcb_info) present but not the other is a configuration error.
+            let has_qe = collateral.qe_identity_json.is_some();
+            let has_tcb = collateral.tcb_info_json.is_some();
+            if has_qe != has_tcb {
+                let missing = if !has_qe {
+                    "qe_identity_json"
+                } else {
+                    "tcb_info_json"
+                };
+                return Err(TdxVerifyError::CollateralIncomplete {
+                    missing: missing.to_string(),
+                });
+            }
             // Step 1: PCK cert chain + CRL.
             verify_pck_chain(collateral, Some(&quote_attestation_key))?;
             // Step 2-5: Full DCAP verification (QE Identity, TCB Info, FMSPC).
-            if collateral.qe_identity_json.is_some()
-                || collateral.tcb_info_json.is_some()
-            {
+            if has_qe && has_tcb {
                 let status = verify_dcap_collateral(
                     collateral,
                     &quote,
@@ -839,12 +858,8 @@ impl TdxVerifier {
                     sig_section_offset,
                 )?;
                 tcb_status = Some(status);
-            } else {
-                tracing::warn!(
-                    "Collateral required but QE Identity and TCB Info not provided. \
-                     PCK chain/CRL verification passed but full DCAP verification incomplete."
-                );
             }
+            // else: neither present → PCK-only verification (valid)
         } else if let Some(ref collateral) = self.policy.collateral {
             // Collateral provided but not required — verify if present.
             verify_pck_chain(collateral, Some(&quote_attestation_key))?;
@@ -3384,6 +3399,71 @@ mod tests {
         assert!(verifier.verify_tdx(&doc).is_ok());
     }
 
+    /// TDX-CHAIN-001b: Partial DCAP bundle — tcb_info present but qe_identity missing →
+    /// CollateralIncomplete error. (Having both missing is fine: PCK-only verification.)
+    #[test]
+    fn tdx_chain_001b_collateral_incomplete_fails() {
+        let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
+        let leaf_ec = gen_ec_key();
+        let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec).unwrap();
+        let (pck_der, _pck_cert) = build_test_leaf("Test PCK Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+        let crl_der = build_test_crl(&ca_key, &ca_cert, 99);
+        let collateral = TdxCollateral {
+            root_ca_der: root_der,
+            pck_chain_der: vec![pck_der],
+            crl_der: Some(crl_der),
+            // Partial: tcb_info present but qe_identity missing → error.
+            qe_identity_json: None,
+            tcb_info_json: Some(r#"{"tcbInfo":{}}"#.to_string()),
+            tcb_signing_chain_der: None,
+        };
+        let policy = TdxVerifyPolicy {
+            require_collateral: true,
+            collateral: Some(collateral),
+            ..Default::default()
+        };
+        let (_, doc) = valid_fixture();
+        let verifier = TdxVerifier::with_policy(policy);
+        let err = verifier.verify_tdx(&doc).unwrap_err();
+        assert_eq!(err.code(), "TDX_COLLATERAL_INCOMPLETE");
+        assert_eq!(err.layer(), "T3_CHAIN");
+        assert!(
+            format!("{err}").contains("qe_identity_json"),
+            "error should name the missing field"
+        );
+    }
+
+    /// TDX-CHAIN-001b: Collateral with only QE Identity but no TCB Info → incomplete.
+    #[test]
+    fn tdx_chain_001b_collateral_partial_qe_only_fails() {
+        let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
+        let leaf_ec = gen_ec_key();
+        let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec).unwrap();
+        let (pck_der, _pck_cert) = build_test_leaf("Test PCK Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+        let crl_der = build_test_crl(&ca_key, &ca_cert, 99);
+        let collateral = TdxCollateral {
+            root_ca_der: root_der,
+            pck_chain_der: vec![pck_der],
+            crl_der: Some(crl_der),
+            qe_identity_json: Some(r#"{"enclaveIdentity":{}}"#.to_string()),
+            tcb_info_json: None,
+            tcb_signing_chain_der: None,
+        };
+        let policy = TdxVerifyPolicy {
+            require_collateral: true,
+            collateral: Some(collateral),
+            ..Default::default()
+        };
+        let (_, doc) = valid_fixture();
+        let verifier = TdxVerifier::with_policy(policy);
+        let err = verifier.verify_tdx(&doc).unwrap_err();
+        assert_eq!(err.code(), "TDX_COLLATERAL_INCOMPLETE");
+        assert!(
+            format!("{err}").contains("tcb_info_json"),
+            "error should name the missing field"
+        );
+    }
+
     /// TDX-CHAIN-002: Expired PCK certificate → CollateralStale.
     #[test]
     fn tdx_chain_002_collateral_stale() {
@@ -4246,7 +4326,13 @@ mod tests {
         };
         let verifier = TdxVerifier::with_policy(policy);
         let err = verifier.verify_tdx(&doc).unwrap_err();
-        assert_eq!(err.code(), "TDX_TCB_INFO_INVALID");
+        // Partial DCAP bundle (qe_identity present, tcb_info missing) is now
+        // rejected early as CollateralIncomplete, before reaching TCB validation.
+        assert_eq!(err.code(), "TDX_COLLATERAL_INCOMPLETE");
+        assert!(
+            format!("{err}").contains("tcb_info_json"),
+            "error should name the missing field"
+        );
     }
 
     // -----------------------------------------------------------------------
