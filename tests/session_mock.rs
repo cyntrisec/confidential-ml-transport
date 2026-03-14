@@ -247,13 +247,9 @@ async fn legacy_require_measurements_in_dev_mode_rejects() {
     let verifier = MockVerifier::new();
     let provider = MockProvider::new();
 
-    let result = SecureChannel::connect_with_attestation(
-        client_transport,
-        &provider,
-        &verifier,
-        config,
-    )
-    .await;
+    let result =
+        SecureChannel::connect_with_attestation(client_transport, &provider, &verifier, config)
+            .await;
     assert!(
         result.is_err(),
         "expected connect to fail with require_measurements in dev mode"
@@ -287,14 +283,10 @@ async fn development_profile_allows_empty_measurements() {
 
     let provider = MockProvider::new();
     let verifier = MockVerifier::new();
-    let _channel = SecureChannel::connect_with_attestation(
-        client_transport,
-        &provider,
-        &verifier,
-        config,
-    )
-    .await
-    .expect("client handshake should succeed in dev mode");
+    let _channel =
+        SecureChannel::connect_with_attestation(client_transport, &provider, &verifier, config)
+            .await
+            .expect("client handshake should succeed in dev mode");
 
     let _server_channel = server_handle.await.unwrap();
 }
@@ -302,12 +294,14 @@ async fn development_profile_allows_empty_measurements() {
 /// Test that Production profile with measurements succeeds.
 #[tokio::test]
 async fn production_profile_with_measurements_succeeds() {
-    use std::collections::BTreeMap;
     use confidential_ml_transport::attestation::types::ExpectedMeasurements;
+    use std::collections::BTreeMap;
 
-    let verifier = confidential_ml_transport::MockVerifierWithMeasurements::new(
-        BTreeMap::from([(0, vec![0xAA; 32])]),
-    );
+    let verifier =
+        confidential_ml_transport::MockVerifierWithMeasurements::new(BTreeMap::from([(
+            0,
+            vec![0xAA; 32],
+        )]));
 
     let mut expected = BTreeMap::new();
     expected.insert(0, vec![0xAA; 32]);
@@ -334,14 +328,10 @@ async fn production_profile_with_measurements_succeeds() {
     });
 
     let provider = MockProvider::new();
-    let _channel = SecureChannel::connect_with_attestation(
-        client_transport,
-        &provider,
-        &verifier,
-        config,
-    )
-    .await
-    .expect("client handshake should succeed in production mode with measurements");
+    let _channel =
+        SecureChannel::connect_with_attestation(client_transport, &provider, &verifier, config)
+            .await
+            .expect("client handshake should succeed in production mode with measurements");
 
     let _server_channel = server_handle.await.unwrap();
 }

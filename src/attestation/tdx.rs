@@ -863,9 +863,7 @@ impl TdxVerifier {
         } else if let Some(ref collateral) = self.policy.collateral {
             // Collateral provided but not required — verify if present.
             verify_pck_chain(collateral, Some(&quote_attestation_key))?;
-            if collateral.qe_identity_json.is_some()
-                || collateral.tcb_info_json.is_some()
-            {
+            if collateral.qe_identity_json.is_some() || collateral.tcb_info_json.is_some() {
                 let status = verify_dcap_collateral(
                     collateral,
                     &quote,
@@ -1112,9 +1110,8 @@ impl TdxQuoteBody {
         }
 
         let mut tee_tcb_svn = [0u8; 16];
-        tee_tcb_svn.copy_from_slice(
-            &body[TEE_TCB_SVN_OFFSET..TEE_TCB_SVN_OFFSET + TEE_TCB_SVN_SIZE],
-        );
+        tee_tcb_svn
+            .copy_from_slice(&body[TEE_TCB_SVN_OFFSET..TEE_TCB_SVN_OFFSET + TEE_TCB_SVN_SIZE]);
 
         let mut mrtd = [0u8; 48];
         mrtd.copy_from_slice(&body[MRTD_OFFSET..MRTD_OFFSET + MEASUREMENT_SIZE]);
@@ -1184,19 +1181,16 @@ impl QeReportFields {
         let qe_report = &sig_data[QE_REPORT_OFFSET..QE_REPORT_OFFSET + QE_REPORT_SIZE];
 
         let mut mrsigner = [0u8; QE_MRSIGNER_SIZE];
-        mrsigner.copy_from_slice(
-            &qe_report[QE_MRSIGNER_OFFSET..QE_MRSIGNER_OFFSET + QE_MRSIGNER_SIZE],
-        );
+        mrsigner
+            .copy_from_slice(&qe_report[QE_MRSIGNER_OFFSET..QE_MRSIGNER_OFFSET + QE_MRSIGNER_SIZE]);
 
         let isvprodid = u16::from_le_bytes([
             qe_report[QE_ISVPRODID_OFFSET],
             qe_report[QE_ISVPRODID_OFFSET + 1],
         ]);
 
-        let isvsvn = u16::from_le_bytes([
-            qe_report[QE_ISVSVN_OFFSET],
-            qe_report[QE_ISVSVN_OFFSET + 1],
-        ]);
+        let isvsvn =
+            u16::from_le_bytes([qe_report[QE_ISVSVN_OFFSET], qe_report[QE_ISVSVN_OFFSET + 1]]);
 
         let mut miscselect = [0u8; 4];
         miscselect.copy_from_slice(&qe_report[QE_MISCSELECT_OFFSET..QE_MISCSELECT_OFFSET + 4]);
@@ -1550,11 +1544,9 @@ fn extract_leaf_p256_pubkey_xy(
 fn extract_fmspc_from_pck_cert(
     cert: &openssl::x509::X509Ref,
 ) -> Result<[u8; FMSPC_LEN], TdxVerifyError> {
-    let cert_der = cert.to_der().map_err(|e| {
-        TdxVerifyError::FmspcMismatch {
-            quote_fmspc: "N/A".into(),
-            collateral_fmspc: format!("failed to encode cert to DER: {e}"),
-        }
+    let cert_der = cert.to_der().map_err(|e| TdxVerifyError::FmspcMismatch {
+        quote_fmspc: "N/A".into(),
+        collateral_fmspc: format!("failed to encode cert to DER: {e}"),
     })?;
 
     parse_fmspc_from_sgx_extensions(&cert_der)
@@ -1583,7 +1575,9 @@ fn parse_fmspc_from_sgx_extensions(data: &[u8]) -> Result<[u8; FMSPC_LEN], TdxVe
     // 06 09 2A 86 48 CE 3D 01 0D 01 04
     // But the Intel SGX OID 1.2.840.113741.1.13.1.4 actually encodes as:
     // 06 0A 2A 86 48 86 F8 4D 01 0D 01 04
-    let fmspc_oid_bytes: &[u8] = &[0x06, 0x0A, 0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x01, 0x0D, 0x01, 0x04];
+    let fmspc_oid_bytes: &[u8] = &[
+        0x06, 0x0A, 0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x01, 0x0D, 0x01, 0x04,
+    ];
 
     // Find the OID in the data.
     if let Some(pos) = find_subsequence(data, fmspc_oid_bytes) {
@@ -1634,9 +1628,8 @@ fn verify_json_signature(
     hex_signature: &str,
     signing_key: &openssl::pkey::PKeyRef<openssl::pkey::Public>,
 ) -> Result<(), TdxVerifyError> {
-    let sig_bytes = hex::decode(hex_signature).map_err(|e| {
-        TdxVerifyError::TcbInfoInvalid(format!("invalid hex signature: {e}"))
-    })?;
+    let sig_bytes = hex::decode(hex_signature)
+        .map_err(|e| TdxVerifyError::TcbInfoInvalid(format!("invalid hex signature: {e}")))?;
 
     if sig_bytes.len() != ECDSA_SIG_SIZE {
         return Err(TdxVerifyError::TcbInfoInvalid(format!(
@@ -1646,12 +1639,10 @@ fn verify_json_signature(
     }
 
     // Convert raw signature (r || s) to DER-encoded ECDSA signature.
-    let r = openssl::bn::BigNum::from_slice(&sig_bytes[..32]).map_err(|e| {
-        TdxVerifyError::TcbInfoInvalid(format!("failed to parse signature r: {e}"))
-    })?;
-    let s = openssl::bn::BigNum::from_slice(&sig_bytes[32..64]).map_err(|e| {
-        TdxVerifyError::TcbInfoInvalid(format!("failed to parse signature s: {e}"))
-    })?;
+    let r = openssl::bn::BigNum::from_slice(&sig_bytes[..32])
+        .map_err(|e| TdxVerifyError::TcbInfoInvalid(format!("failed to parse signature r: {e}")))?;
+    let s = openssl::bn::BigNum::from_slice(&sig_bytes[32..64])
+        .map_err(|e| TdxVerifyError::TcbInfoInvalid(format!("failed to parse signature s: {e}")))?;
 
     let ecdsa_sig = openssl::ecdsa::EcdsaSig::from_private_components(r, s).map_err(|e| {
         TdxVerifyError::TcbInfoInvalid(format!("failed to build ECDSA signature: {e}"))
@@ -1662,14 +1653,13 @@ fn verify_json_signature(
     })?;
 
     let mut verifier =
-        openssl::sign::Verifier::new(openssl::hash::MessageDigest::sha256(), signing_key)
-            .map_err(|e| {
-                TdxVerifyError::TcbInfoInvalid(format!("failed to create verifier: {e}"))
-            })?;
+        openssl::sign::Verifier::new(openssl::hash::MessageDigest::sha256(), signing_key).map_err(
+            |e| TdxVerifyError::TcbInfoInvalid(format!("failed to create verifier: {e}")),
+        )?;
 
-    let valid = verifier.verify_oneshot(&der_sig, json_bytes).map_err(|e| {
-        TdxVerifyError::TcbInfoInvalid(format!("ECDSA verification error: {e}"))
-    })?;
+    let valid = verifier
+        .verify_oneshot(&der_sig, json_bytes)
+        .map_err(|e| TdxVerifyError::TcbInfoInvalid(format!("ECDSA verification error: {e}")))?;
 
     if !valid {
         return Err(TdxVerifyError::TcbInfoInvalid(
@@ -1716,8 +1706,12 @@ fn verify_qe_identity(
     let identity_json_str = response.enclave_identity.to_string();
     // The signature is over the raw JSON text of enclave_identity as it appears
     // in the response. We use the serialized Value representation.
-    verify_json_signature(identity_json_str.as_bytes(), &response.signature, tcb_signing_key)
-        .map_err(|_| TdxVerifyError::QeIdentityInvalid("QE Identity signature invalid".into()))?;
+    verify_json_signature(
+        identity_json_str.as_bytes(),
+        &response.signature,
+        tcb_signing_key,
+    )
+    .map_err(|_| TdxVerifyError::QeIdentityInvalid("QE Identity signature invalid".into()))?;
 
     // Parse the enclave identity structure.
     let identity: QeIdentity =
@@ -1728,9 +1722,8 @@ fn verify_qe_identity(
         })?;
 
     // Check MRSIGNER: apply mask (for QE, typically full mask = exact match).
-    let expected_mrsigner = hex::decode(&identity.mrsigner).map_err(|e| {
-        TdxVerifyError::QeIdentityInvalid(format!("invalid MRSIGNER hex: {e}"))
-    })?;
+    let expected_mrsigner = hex::decode(&identity.mrsigner)
+        .map_err(|e| TdxVerifyError::QeIdentityInvalid(format!("invalid MRSIGNER hex: {e}")))?;
     if expected_mrsigner.len() < QE_MRSIGNER_SIZE {
         return Err(TdxVerifyError::QeIdentityInvalid(format!(
             "MRSIGNER too short: expected at least {} bytes, got {}",
@@ -1759,9 +1752,8 @@ fn verify_qe_identity(
     let miscselect_mask = hex::decode(&identity.miscselect_mask).map_err(|e| {
         TdxVerifyError::QeIdentityInvalid(format!("invalid MISCSELECT mask hex: {e}"))
     })?;
-    let expected_miscselect = hex::decode(&identity.miscselect).map_err(|e| {
-        TdxVerifyError::QeIdentityInvalid(format!("invalid MISCSELECT hex: {e}"))
-    })?;
+    let expected_miscselect = hex::decode(&identity.miscselect)
+        .map_err(|e| TdxVerifyError::QeIdentityInvalid(format!("invalid MISCSELECT hex: {e}")))?;
     if miscselect_mask.len() >= 4 && expected_miscselect.len() >= 4 {
         for i in 0..4 {
             if (qe_report.miscselect[i] & miscselect_mask[i])
@@ -1781,10 +1773,10 @@ fn verify_qe_identity(
     let attributes_mask = hex::decode(&identity.attributes_mask).map_err(|e| {
         TdxVerifyError::QeIdentityInvalid(format!("invalid ATTRIBUTES mask hex: {e}"))
     })?;
-    let expected_attributes = hex::decode(&identity.attributes).map_err(|e| {
-        TdxVerifyError::QeIdentityInvalid(format!("invalid ATTRIBUTES hex: {e}"))
-    })?;
-    if attributes_mask.len() >= QE_ATTRIBUTES_SIZE && expected_attributes.len() >= QE_ATTRIBUTES_SIZE
+    let expected_attributes = hex::decode(&identity.attributes)
+        .map_err(|e| TdxVerifyError::QeIdentityInvalid(format!("invalid ATTRIBUTES hex: {e}")))?;
+    if attributes_mask.len() >= QE_ATTRIBUTES_SIZE
+        && expected_attributes.len() >= QE_ATTRIBUTES_SIZE
     {
         for i in 0..QE_ATTRIBUTES_SIZE {
             if (qe_report.attributes[i] & attributes_mask[i])
@@ -1845,8 +1837,12 @@ fn verify_tcb_info(
 
     // Verify signature over the raw tcbInfo JSON.
     let tcb_info_json_str = response.tcb_info.to_string();
-    verify_json_signature(tcb_info_json_str.as_bytes(), &response.signature, tcb_signing_key)
-        .map_err(|_| TdxVerifyError::TcbInfoInvalid("TCB Info signature invalid".into()))?;
+    verify_json_signature(
+        tcb_info_json_str.as_bytes(),
+        &response.signature,
+        tcb_signing_key,
+    )
+    .map_err(|_| TdxVerifyError::TcbInfoInvalid("TCB Info signature invalid".into()))?;
 
     // Parse the TCB Info structure.
     let tcb_info: TcbInfo = serde_json::from_value(response.tcb_info.clone()).map_err(|e| {
@@ -1948,15 +1944,10 @@ fn match_tcb_level(
 /// means the TCBInfo is for a different platform.
 ///
 /// Reference: Intel SGX DCAP Library, "FMSPC Cross-Validation".
-fn verify_fmspc(
-    pck_fmspc: &[u8; FMSPC_LEN],
-    tcb_info: &TcbInfo,
-) -> Result<(), TdxVerifyError> {
-    let tcb_fmspc = hex::decode(&tcb_info.fmspc).map_err(|e| {
-        TdxVerifyError::FmspcMismatch {
-            quote_fmspc: hex::encode(pck_fmspc),
-            collateral_fmspc: format!("invalid FMSPC hex in TCBInfo: {e}"),
-        }
+fn verify_fmspc(pck_fmspc: &[u8; FMSPC_LEN], tcb_info: &TcbInfo) -> Result<(), TdxVerifyError> {
+    let tcb_fmspc = hex::decode(&tcb_info.fmspc).map_err(|e| TdxVerifyError::FmspcMismatch {
+        quote_fmspc: hex::encode(pck_fmspc),
+        collateral_fmspc: format!("invalid FMSPC hex in TCBInfo: {e}"),
     })?;
 
     if tcb_fmspc.len() != FMSPC_LEN {
@@ -1994,12 +1985,9 @@ fn verify_tcb_signing_chain(
     use openssl::x509::store::X509StoreBuilder;
     use openssl::x509::{X509StoreContext, X509};
 
-    let tcb_chain_der = collateral
-        .tcb_signing_chain_der
-        .as_ref()
-        .ok_or_else(|| {
-            TdxVerifyError::TcbInfoInvalid("missing TCB signing certificate chain".into())
-        })?;
+    let tcb_chain_der = collateral.tcb_signing_chain_der.as_ref().ok_or_else(|| {
+        TdxVerifyError::TcbInfoInvalid("missing TCB signing certificate chain".into())
+    })?;
 
     if tcb_chain_der.is_empty() {
         return Err(TdxVerifyError::TcbInfoInvalid(
@@ -2012,9 +2000,8 @@ fn verify_tcb_signing_chain(
         TdxVerifyError::TcbInfoInvalid(format!("failed to parse root CA for TCB chain: {e}"))
     })?;
 
-    let mut store_builder = X509StoreBuilder::new().map_err(|e| {
-        TdxVerifyError::TcbInfoInvalid(format!("failed to create X509 store: {e}"))
-    })?;
+    let mut store_builder = X509StoreBuilder::new()
+        .map_err(|e| TdxVerifyError::TcbInfoInvalid(format!("failed to create X509 store: {e}")))?;
     store_builder.add_cert(root_ca).map_err(|e| {
         TdxVerifyError::TcbInfoInvalid(format!("failed to add root CA to store: {e}"))
     })?;
@@ -2026,9 +2013,8 @@ fn verify_tcb_signing_chain(
     })?;
 
     // Build intermediate chain.
-    let mut chain = Stack::new().map_err(|e| {
-        TdxVerifyError::TcbInfoInvalid(format!("failed to create cert stack: {e}"))
-    })?;
+    let mut chain = Stack::new()
+        .map_err(|e| TdxVerifyError::TcbInfoInvalid(format!("failed to create cert stack: {e}")))?;
     for (i, cert_der) in tcb_chain_der.iter().skip(1).enumerate() {
         let cert = X509::from_der(cert_der).map_err(|e| {
             TdxVerifyError::TcbInfoInvalid(format!(
@@ -2104,8 +2090,7 @@ fn verify_dcap_collateral(
         if sig_data_len >= QE_REPORT_OFFSET + QE_REPORT_SIZE {
             let sig_data = &quote[sig_data_start..sig_data_start + sig_data_len];
             let qe_report = QeReportFields::parse(sig_data)?;
-            let _qe_tcb_status =
-                verify_qe_identity(collateral, &qe_report, &tcb_signing_key)?;
+            let _qe_tcb_status = verify_qe_identity(collateral, &qe_report, &tcb_signing_key)?;
             tracing::debug!(qe_tcb_status = %_qe_tcb_status, "QE Identity verified");
         } else {
             tracing::warn!(
@@ -2117,51 +2102,50 @@ fn verify_dcap_collateral(
     }
 
     // Step 3: TCB Info verification and level matching.
-    let tcb_status = if collateral.tcb_info_json.is_some() {
-        let (status, tcb_info) = verify_tcb_info(
-            collateral,
-            &body.tee_tcb_svn,
-            header_pce_svn,
-            &tcb_signing_key,
-        )?;
+    let tcb_status =
+        if collateral.tcb_info_json.is_some() {
+            let (status, tcb_info) = verify_tcb_info(
+                collateral,
+                &body.tee_tcb_svn,
+                header_pce_svn,
+                &tcb_signing_key,
+            )?;
 
-        // Step 4: FMSPC cross-validation.
-        // Extract FMSPC from PCK cert and compare with TCBInfo.
-        if !collateral.pck_chain_der.is_empty() {
-            let leaf_cert =
-                openssl::x509::X509::from_der(&collateral.pck_chain_der[0]).map_err(|e| {
-                    TdxVerifyError::FmspcMismatch {
+            // Step 4: FMSPC cross-validation.
+            // Extract FMSPC from PCK cert and compare with TCBInfo.
+            if !collateral.pck_chain_der.is_empty() {
+                let leaf_cert = openssl::x509::X509::from_der(&collateral.pck_chain_der[0])
+                    .map_err(|e| TdxVerifyError::FmspcMismatch {
                         quote_fmspc: "N/A".into(),
                         collateral_fmspc: format!("failed to parse PCK cert for FMSPC: {e}"),
+                    })?;
+                match extract_fmspc_from_pck_cert(&leaf_cert) {
+                    Ok(pck_fmspc) => {
+                        verify_fmspc(&pck_fmspc, &tcb_info)?;
+                        tracing::debug!(
+                            fmspc = hex::encode(pck_fmspc),
+                            "FMSPC cross-validation passed"
+                        );
                     }
-                })?;
-            match extract_fmspc_from_pck_cert(&leaf_cert) {
-                Ok(pck_fmspc) => {
-                    verify_fmspc(&pck_fmspc, &tcb_info)?;
-                    tracing::debug!(
-                        fmspc = hex::encode(pck_fmspc),
-                        "FMSPC cross-validation passed"
-                    );
-                }
-                Err(_) => {
-                    // FMSPC extraction failed — this is expected for test certs
-                    // that don't have SGX extensions. In production, PCK certs
-                    // always have this extension.
-                    tracing::warn!(
-                        "Could not extract FMSPC from PCK cert; \
+                    Err(_) => {
+                        // FMSPC extraction failed — this is expected for test certs
+                        // that don't have SGX extensions. In production, PCK certs
+                        // always have this extension.
+                        tracing::warn!(
+                            "Could not extract FMSPC from PCK cert; \
                          skipping FMSPC cross-validation. \
                          This is expected for test/synthetic certificates."
-                    );
+                        );
+                    }
                 }
             }
-        }
 
-        tracing::debug!(tcb_status = %status, "TCB Info verified");
-        status
-    } else {
-        tracing::warn!("No TCB Info provided; skipping TCB level matching");
-        TcbStatus::UpToDate // assume up-to-date if no TCB Info
-    };
+            tracing::debug!(tcb_status = %status, "TCB Info verified");
+            status
+        } else {
+            tracing::warn!("No TCB Info provided; skipping TCB level matching");
+            TcbStatus::UpToDate // assume up-to-date if no TCB Info
+        };
 
     Ok(tcb_status)
 }
@@ -2456,8 +2440,7 @@ pub fn build_synthetic_tdx_quote_full(
     let mut qe_report_data = vec![0u8; QE_REPORT_SIZE];
     // CPUSVN (16 bytes) at offset 0 — leave as zeros for tests.
     // MISCSELECT (4 bytes) at offset 16.
-    qe_report_data[QE_MISCSELECT_OFFSET..QE_MISCSELECT_OFFSET + 4]
-        .copy_from_slice(&qe_miscselect);
+    qe_report_data[QE_MISCSELECT_OFFSET..QE_MISCSELECT_OFFSET + 4].copy_from_slice(&qe_miscselect);
     // ATTRIBUTES (16 bytes) at offset 48.
     qe_report_data[QE_ATTRIBUTES_OFFSET..QE_ATTRIBUTES_OFFSET + QE_ATTRIBUTES_SIZE]
         .copy_from_slice(&qe_attributes);
@@ -2472,8 +2455,7 @@ pub fn build_synthetic_tdx_quote_full(
         .copy_from_slice(&qe_isvsvn.to_le_bytes());
 
     // sig_data_len includes: signature(64) + pubkey(64) + qe_report(384)
-    let sig_data_len =
-        (ECDSA_SIG_SIZE + ECDSA_PUBKEY_SIZE + QE_REPORT_SIZE) as u32;
+    let sig_data_len = (ECDSA_SIG_SIZE + ECDSA_PUBKEY_SIZE + QE_REPORT_SIZE) as u32;
     quote.extend_from_slice(&sig_data_len.to_le_bytes());
     quote.extend_from_slice(&r);
     quote.extend_from_slice(&s);
@@ -3406,7 +3388,8 @@ mod tests {
         let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
         let leaf_ec = gen_ec_key();
         let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec).unwrap();
-        let (pck_der, _pck_cert) = build_test_leaf("Test PCK Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+        let (pck_der, _pck_cert) =
+            build_test_leaf("Test PCK Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
         let crl_der = build_test_crl(&ca_key, &ca_cert, 99);
         let collateral = TdxCollateral {
             root_ca_der: root_der,
@@ -3439,7 +3422,8 @@ mod tests {
         let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
         let leaf_ec = gen_ec_key();
         let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec).unwrap();
-        let (pck_der, _pck_cert) = build_test_leaf("Test PCK Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+        let (pck_der, _pck_cert) =
+            build_test_leaf("Test PCK Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
         let crl_der = build_test_crl(&ca_key, &ca_cert, 99);
         let collateral = TdxCollateral {
             root_ca_der: root_der,
@@ -3875,12 +3859,10 @@ mod tests {
         data: &[u8],
         key: &openssl::pkey::PKey<openssl::pkey::Private>,
     ) -> String {
-        let mut signer =
-            openssl::sign::Signer::new(openssl::hash::MessageDigest::sha256(), key)
-                .expect("signer");
+        let mut signer = openssl::sign::Signer::new(openssl::hash::MessageDigest::sha256(), key)
+            .expect("signer");
         let der_sig = signer.sign_oneshot_to_vec(data).expect("sign");
-        let ecdsa_sig =
-            openssl::ecdsa::EcdsaSig::from_der(&der_sig).expect("parse DER sig");
+        let ecdsa_sig = openssl::ecdsa::EcdsaSig::from_der(&der_sig).expect("parse DER sig");
         let r = ecdsa_sig.r().to_vec_padded(32).expect("r");
         let s = ecdsa_sig.s().to_vec_padded(32).expect("s");
         let mut raw = Vec::with_capacity(64);
@@ -3938,8 +3920,8 @@ mod tests {
         // Build TCB Info JSON signed by TCB signing key.
         let tcb_info_json = build_test_tcb_info_json(
             &TEST_FMSPC,
-            &[5; 16],   // SGX SVNs match TEE_TCB_SVN
-            &[5; 16],   // TDX SVNs match TEE_TCB_SVN
+            &[5; 16], // SGX SVNs match TEE_TCB_SVN
+            &[5; 16], // TDX SVNs match TEE_TCB_SVN
             TEST_PCE_SVN,
             "UpToDate",
             &tcb_key,
@@ -4695,8 +4677,7 @@ mod tests {
         // Should match the fallback "OutOfDate" level (svn=0, status=OutOfDate)
         // which is not acceptable by default.
         assert!(
-            err.code() == "TDX_TCB_STATUS_UNACCEPTABLE"
-                || err.code() == "TDX_TCB_INFO_INVALID",
+            err.code() == "TDX_TCB_STATUS_UNACCEPTABLE" || err.code() == "TDX_TCB_INFO_INVALID",
             "Expected TCB rejection, got: {:?}",
             err
         );
@@ -4756,7 +4737,11 @@ mod tests {
         };
 
         let result = verify_fmspc(&pck_fmspc, &tcb_info);
-        assert!(result.is_ok(), "FMSPC match should pass: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "FMSPC match should pass: {:?}",
+            result.err()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -4786,8 +4771,18 @@ mod tests {
                     }}
                 ]
             }}"#,
-            sgx = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 5})).collect::<Vec<_>>()).unwrap(),
-            tdx = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 5})).collect::<Vec<_>>()).unwrap(),
+            sgx = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 5}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            tdx = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 5}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
         ))
         .unwrap();
 
@@ -4818,8 +4813,18 @@ mod tests {
                     }}
                 ]
             }}"#,
-            sgx = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 3})).collect::<Vec<_>>()).unwrap(),
-            tdx = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 3})).collect::<Vec<_>>()).unwrap(),
+            sgx = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 3}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            tdx = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 3}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
         ))
         .unwrap();
 
@@ -4859,10 +4864,30 @@ mod tests {
                     }}
                 ]
             }}"#,
-            sgx_high = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 5})).collect::<Vec<_>>()).unwrap(),
-            tdx_high = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 5})).collect::<Vec<_>>()).unwrap(),
-            sgx_low = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 3})).collect::<Vec<_>>()).unwrap(),
-            tdx_low = serde_json::to_string(&(0..16).map(|_| serde_json::json!({"svn": 3})).collect::<Vec<_>>()).unwrap(),
+            sgx_high = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 5}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            tdx_high = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 5}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            sgx_low = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 3}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            tdx_low = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 3}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
         ))
         .unwrap();
 
@@ -4942,7 +4967,10 @@ mod tests {
             TcbStatus::from_str("OutOfDateConfigurationNeeded"),
             TcbStatus::OutOfDateConfigurationNeeded
         );
-        assert!(matches!(TcbStatus::from_str("FooBar"), TcbStatus::Unknown(_)));
+        assert!(matches!(
+            TcbStatus::from_str("FooBar"),
+            TcbStatus::Unknown(_)
+        ));
     }
 
     #[test]
