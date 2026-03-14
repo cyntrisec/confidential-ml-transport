@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 confidential-ml-transport = { path = "../..", features = ["mock", "tcp"] }
-tokio = { version = "1.38", features = ["rt-multi-thread", "macros", "io-util"] }
+tokio = { version = "1.50", features = ["rt-multi-thread", "macros", "io-util"] }
 bytes = "1.5"
 tokio-util = { version = "0.7", features = ["codec"] }
 clap = { version = "4", features = ["derive"] }
