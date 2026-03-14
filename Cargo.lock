@@ -564,6 +564,7 @@ dependencies = [
  "rcgen",
  "rustls",
  "rustls-pki-types",
+ "serde",
  "serde_bytes",
  "serde_json",
  "sev",

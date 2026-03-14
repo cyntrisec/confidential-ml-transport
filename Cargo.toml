@@ -38,6 +38,7 @@ serde_bytes = { version = "0.11", optional = true }
 sev = { version = "7", default-features = false, features = ["snp", "openssl"], optional = true }
 az-cvm-vtpm = { version = "0.8", optional = true }
 tss-esapi = { version = "7", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
@@ -48,7 +49,7 @@ vsock = ["dep:tokio-vsock"]
 nitro = ["dep:coset", "dep:ciborium", "dep:openssl", "dep:aws-nitro-enclaves-nsm-api", "dep:serde_bytes"]
 sev-snp = ["dep:sev", "dep:openssl"]
 azure-sev-snp = ["dep:az-cvm-vtpm", "dep:tss-esapi", "dep:sev", "dep:openssl", "dep:serde_json"]
-tdx = ["dep:openssl", "dep:openssl-sys"]
+tdx = ["dep:openssl", "dep:openssl-sys", "dep:serde", "dep:serde_json"]
 
 [dev-dependencies]
 proptest = "1.4"

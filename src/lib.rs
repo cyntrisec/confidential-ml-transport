@@ -28,7 +28,7 @@ pub use frame::tensor::{DType, OwnedTensor, TensorRef};
 pub use frame::{Flags, Frame, FrameType};
 pub use session::channel::{Message, SecureChannel};
 pub use session::retry::RetryPolicy;
-pub use session::{SessionConfig, SessionConfigBuilder};
+pub use session::{SecurityProfile, SessionConfig, SessionConfigBuilder};
 
 pub use attestation::types::{AttestationDocument, ExpectedMeasurements, VerifiedAttestation};
 pub use attestation::{AttestationProvider, AttestationVerifier};
@@ -44,7 +44,9 @@ pub use attestation::sev::{SevSnpProvider, SevSnpVerifier};
 
 #[cfg(feature = "tdx")]
 pub use attestation::tdx::{
-    TdxCollateral, TdxProvider, TdxVerifier, TdxVerifyError, TdxVerifyPolicy,
+    QeIdentity, QeIdentityResponse, QeTcbComponent, QeTcbLevel, SvnComponent, TcbComponents,
+    TcbInfo, TcbInfoResponse, TcbLevel, TcbStatus, TdxCollateral, TdxModule, TdxModuleIdentity,
+    TdxProvider, TdxVerifier, TdxVerifyError, TdxVerifyPolicy,
 };
 
 #[cfg(feature = "azure-sev-snp")]
