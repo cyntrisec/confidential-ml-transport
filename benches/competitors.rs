@@ -128,7 +128,7 @@ fn bench_handshake(c: &mut Criterion) {
         b.iter(|| {
             rt.block_on(async {
                 let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
-                let config = SessionConfig::default();
+                let config = SessionConfig::development();
 
                 let (s, c) = tokio::join!(
                     SecureChannel::accept_with_attestation(
@@ -273,7 +273,7 @@ fn bench_round_trip(c: &mut Criterion) {
 
                 let (client_ch, _rx) = rt.block_on(async {
                     let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
-                    let config = SessionConfig::default();
+                    let config = SessionConfig::development();
 
                     let (s, c) = tokio::join!(
                         SecureChannel::accept_with_attestation(

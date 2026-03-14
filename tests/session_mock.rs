@@ -13,7 +13,7 @@ async fn full_session_data_exchange() {
 
     let provider = MockProvider::new();
     let verifier = MockVerifier::new();
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
 
     // Run client and server handshakes concurrently.
     let server_handle = tokio::spawn(async move {
@@ -45,7 +45,7 @@ async fn full_session_data_exchange() {
     });
 
     let client_handle = tokio::spawn(async move {
-        let config = SessionConfig::default();
+        let config = SessionConfig::development();
         let mut channel =
             SecureChannel::connect_with_attestation(client_transport, &provider, &verifier, config)
                 .await
@@ -86,7 +86,7 @@ async fn session_tensor_exchange() {
             server_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -112,7 +112,7 @@ async fn session_tensor_exchange() {
             client_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -146,7 +146,7 @@ async fn session_heartbeat() {
             server_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -167,7 +167,7 @@ async fn session_heartbeat() {
             client_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -184,13 +184,11 @@ async fn session_heartbeat() {
     client_handle.await.unwrap();
 }
 
-/// Test that require_measurements rejects handshake when measurements are None.
+/// Test that production profile rejects handshake when measurements are None.
 #[tokio::test]
-async fn require_measurements_rejects_none() {
-    let config = SessionConfig::builder()
-        .require_measurements()
-        .build()
-        .unwrap();
+async fn production_profile_rejects_empty_measurements() {
+    // Default builder is Production profile — no measurements set.
+    let config = SessionConfig::builder().build().unwrap();
 
     let (client_transport, server_transport) = tokio::io::duplex(16384);
 
@@ -207,12 +205,12 @@ async fn require_measurements_rejects_none() {
     .await;
     assert!(
         result.is_err(),
-        "expected connect to fail with require_measurements"
+        "expected connect to fail in production profile without measurements"
     );
     let err = result.err().unwrap();
     assert!(
-        format!("{err}").contains("require_measurements"),
-        "expected require_measurements error, got: {err}"
+        format!("{err}").contains("production security profile"),
+        "expected production profile error, got: {err}"
     );
 
     // Responder should also fail.
@@ -221,13 +219,131 @@ async fn require_measurements_rejects_none() {
             .await;
     assert!(
         result.is_err(),
-        "expected accept to fail with require_measurements"
+        "expected accept to fail in production profile without measurements"
+    );
+    let err = result.err().unwrap();
+    assert!(
+        format!("{err}").contains("production security profile"),
+        "expected production profile error, got: {err}"
+    );
+}
+
+/// Test that the legacy require_measurements flag still works in Development mode.
+#[tokio::test]
+async fn legacy_require_measurements_in_dev_mode_rejects() {
+    // Development profile + explicit require_measurements = true should still reject.
+    let config = SessionConfig::builder()
+        .security_profile(confidential_ml_transport::SecurityProfile::Development)
+        .build()
+        .unwrap();
+
+    // After security_profile(Development), require_measurements is false.
+    // Now set it back to true explicitly.
+    let mut config = config;
+    config.require_measurements = true;
+
+    let (client_transport, _server_transport) = tokio::io::duplex(16384);
+
+    let verifier = MockVerifier::new();
+    let provider = MockProvider::new();
+
+    let result = SecureChannel::connect_with_attestation(
+        client_transport,
+        &provider,
+        &verifier,
+        config,
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "expected connect to fail with require_measurements in dev mode"
     );
     let err = result.err().unwrap();
     assert!(
         format!("{err}").contains("require_measurements"),
         "expected require_measurements error, got: {err}"
     );
+}
+
+/// Test that Development profile allows empty measurements.
+#[tokio::test]
+async fn development_profile_allows_empty_measurements() {
+    let config = SessionConfig::development();
+
+    let (client_transport, server_transport) = tokio::io::duplex(16384);
+
+    let server_handle = tokio::spawn(async move {
+        let provider = MockProvider::new();
+        let verifier = MockVerifier::new();
+        SecureChannel::accept_with_attestation(
+            server_transport,
+            &provider,
+            &verifier,
+            SessionConfig::development(),
+        )
+        .await
+        .expect("server handshake should succeed in dev mode")
+    });
+
+    let provider = MockProvider::new();
+    let verifier = MockVerifier::new();
+    let _channel = SecureChannel::connect_with_attestation(
+        client_transport,
+        &provider,
+        &verifier,
+        config,
+    )
+    .await
+    .expect("client handshake should succeed in dev mode");
+
+    let _server_channel = server_handle.await.unwrap();
+}
+
+/// Test that Production profile with measurements succeeds.
+#[tokio::test]
+async fn production_profile_with_measurements_succeeds() {
+    use std::collections::BTreeMap;
+    use confidential_ml_transport::attestation::types::ExpectedMeasurements;
+
+    let verifier = confidential_ml_transport::MockVerifierWithMeasurements::new(
+        BTreeMap::from([(0, vec![0xAA; 32])]),
+    );
+
+    let mut expected = BTreeMap::new();
+    expected.insert(0, vec![0xAA; 32]);
+
+    // Production profile with measurements provided.
+    let config = SessionConfig::builder()
+        .expected_measurements(ExpectedMeasurements::new(expected))
+        .build()
+        .unwrap();
+
+    let (client_transport, server_transport) = tokio::io::duplex(16384);
+
+    let server_handle = tokio::spawn(async move {
+        let provider = MockProvider::new();
+        let server_verifier = MockVerifier::new();
+        SecureChannel::accept_with_attestation(
+            server_transport,
+            &provider,
+            &server_verifier,
+            SessionConfig::development(),
+        )
+        .await
+        .expect("server handshake should succeed")
+    });
+
+    let provider = MockProvider::new();
+    let _channel = SecureChannel::connect_with_attestation(
+        client_transport,
+        &provider,
+        &verifier,
+        config,
+    )
+    .await
+    .expect("client handshake should succeed in production mode with measurements");
+
+    let _server_channel = server_handle.await.unwrap();
 }
 
 /// Test multiple data messages in sequence.
@@ -244,7 +360,7 @@ async fn session_multiple_messages() {
             server_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -271,7 +387,7 @@ async fn session_multiple_messages() {
             client_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -300,7 +416,7 @@ async fn mutual_attestation_both_sides_receive_attestation() {
             server_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -327,7 +443,7 @@ async fn mutual_attestation_both_sides_receive_attestation() {
             client_transport,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();

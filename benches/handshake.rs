@@ -22,7 +22,7 @@ fn bench_handshake(c: &mut Criterion) {
         b.iter(|| {
             rt.block_on(async {
                 let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
-                let config = SessionConfig::default();
+                let config = SessionConfig::development();
 
                 let (server_ch, client_ch) = tokio::join!(
                     SecureChannel::accept_with_attestation(

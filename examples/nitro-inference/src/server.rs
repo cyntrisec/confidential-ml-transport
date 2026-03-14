@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
     let verifier: Box<dyn confidential_ml_transport::AttestationVerifier> =
         Box::new(confidential_ml_transport::MockVerifier::new());
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
 
     #[cfg(feature = "tcp-mock")]
     {

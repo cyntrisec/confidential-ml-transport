@@ -31,7 +31,7 @@ async fn heartbeat_is_encrypted() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -50,7 +50,7 @@ async fn heartbeat_is_encrypted() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -76,7 +76,7 @@ async fn shutdown_is_encrypted() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -90,7 +90,7 @@ async fn shutdown_is_encrypted() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -120,7 +120,7 @@ async fn sequence_counters_unified() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -146,7 +146,7 @@ async fn sequence_counters_unified() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -173,6 +173,7 @@ async fn handshake_timeout_triggers() {
     // Server side is dropped — no one responds to the handshake.
 
     let config = SessionConfig::builder()
+        .allow_empty_measurements()
         .handshake_timeout(Duration::from_millis(100))
         .build()
         .unwrap();
@@ -205,6 +206,7 @@ async fn handshake_within_timeout_succeeds() {
     let verifier = MockVerifier::new();
 
     let server_config = SessionConfig::builder()
+        .allow_empty_measurements()
         .handshake_timeout(Duration::from_secs(10))
         .build()
         .unwrap();
@@ -293,7 +295,7 @@ async fn reject_attestation_without_public_key() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await;
         // Server may or may not error (depends on timing).
@@ -305,7 +307,7 @@ async fn reject_attestation_without_public_key() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await;
 
@@ -453,7 +455,7 @@ async fn handshake_with_correct_sequences_succeeds() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap()
@@ -464,7 +466,7 @@ async fn handshake_with_correct_sequences_succeeds() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -490,6 +492,7 @@ async fn handshake_rejects_wrong_sequence() {
             &provider,
             &MockVerifier::new(),
             SessionConfig::builder()
+                .allow_empty_measurements()
                 .handshake_timeout(Duration::from_millis(500))
                 .build()
                 .unwrap(),
@@ -541,7 +544,7 @@ async fn confirmation_binds_both_keys_bidirectional() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -568,7 +571,7 @@ async fn confirmation_binds_both_keys_bidirectional() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -613,7 +616,7 @@ async fn session_id_domain_separation_consistent() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -630,7 +633,7 @@ async fn session_id_domain_separation_consistent() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -715,7 +718,7 @@ async fn normal_session_within_buffer_bounds() {
             server_transport,
             &provider,
             &MockVerifier::new(),
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -736,7 +739,7 @@ async fn normal_session_within_buffer_bounds() {
             client_transport,
             &MockProvider::new(),
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();

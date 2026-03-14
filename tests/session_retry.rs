@@ -153,7 +153,7 @@ async fn connect_with_retry_succeeds() {
             stream,
             &provider,
             &server_verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -162,6 +162,7 @@ async fn connect_with_retry_succeeds() {
     });
 
     let config = SessionConfig::builder()
+        .allow_empty_measurements()
         .retry_policy(RetryPolicy {
             max_retries: 2,
             initial_delay: Duration::from_millis(1),
@@ -286,7 +287,7 @@ async fn measurement_verification_in_handshake() {
             server_transport,
             &provider,
             &server_verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -338,7 +339,7 @@ async fn measurement_mismatch_rejects_handshake() {
             server_transport,
             &provider,
             &server_verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await;
     });

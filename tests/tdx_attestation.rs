@@ -63,7 +63,7 @@ async fn tdx_handshake_integration() {
 
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
 
     let server_provider = SyntheticTdxProvider::new(mrtd);
     let server_verifier = TdxVerifier::new(None);
@@ -77,7 +77,7 @@ async fn tdx_handshake_integration() {
         .await
     });
 
-    let client_config = SessionConfig::default();
+    let client_config = SessionConfig::development();
     let mut client =
         SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
             .await
@@ -118,7 +118,7 @@ async fn tdx_handshake_with_measurement_verification() {
 
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
     let server_provider = SyntheticTdxProvider::new(mrtd);
     let server_verifier = TdxVerifier::new(Some(mrtd.to_vec()));
     let server_handle = tokio::spawn(async move {
@@ -131,7 +131,7 @@ async fn tdx_handshake_with_measurement_verification() {
         .await
     });
 
-    let client_config = SessionConfig::default();
+    let client_config = SessionConfig::development();
     let mut client =
         SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
             .await
@@ -156,7 +156,7 @@ async fn tdx_handshake_rejects_wrong_measurement() {
 
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
     let server_provider = SyntheticTdxProvider::new(mrtd);
     let server_verifier = TdxVerifier::new(Some(vec![0xDD; 48]));
     let _server_handle = tokio::spawn(async move {
@@ -169,7 +169,7 @@ async fn tdx_handshake_rejects_wrong_measurement() {
         .await
     });
 
-    let client_config = SessionConfig::default();
+    let client_config = SessionConfig::development();
     let result =
         SecureChannel::connect_with_attestation(client_io, &provider, &verifier, client_config)
             .await;

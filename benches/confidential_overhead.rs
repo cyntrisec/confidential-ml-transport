@@ -160,7 +160,7 @@ fn bench_secure_channel(c: &mut Criterion) {
                     let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
                     let provider = MockProvider::new();
                     let verifier = MockVerifier::new();
-                    let config = SessionConfig::default();
+                    let config = SessionConfig::development();
 
                     let (server_ch, client_ch) = tokio::join!(
                         SecureChannel::accept_with_attestation(

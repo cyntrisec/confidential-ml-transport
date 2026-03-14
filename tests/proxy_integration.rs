@@ -53,7 +53,7 @@ async fn proxy_end_to_end_echo() {
     let server_config = ServerProxyConfig {
         listen_addr: server_addr,
         backend_addr: echo_addr,
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
@@ -73,7 +73,7 @@ async fn proxy_end_to_end_echo() {
     let client_config = ClientProxyConfig {
         listen_addr: client_proxy_addr,
         enclave_addr: server_addr,
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
@@ -119,7 +119,7 @@ async fn proxy_client_disconnect_is_clean() {
     let server_config = ServerProxyConfig {
         listen_addr: server_addr,
         backend_addr: echo_addr,
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
@@ -137,7 +137,7 @@ async fn proxy_client_disconnect_is_clean() {
     let client_config = ClientProxyConfig {
         listen_addr: client_proxy_addr,
         enclave_addr: server_addr,
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
@@ -179,7 +179,7 @@ async fn proxy_backend_unreachable_does_not_crash() {
     let server_config = ServerProxyConfig {
         listen_addr: server_addr,
         backend_addr: dead_addr, // unreachable
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
@@ -197,7 +197,7 @@ async fn proxy_backend_unreachable_does_not_crash() {
     let client_config = ClientProxyConfig {
         listen_addr: client_proxy_addr,
         enclave_addr: server_addr,
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
@@ -241,7 +241,7 @@ async fn proxy_concurrent_connections() {
     let server_config = ServerProxyConfig {
         listen_addr: server_addr,
         backend_addr: echo_addr,
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let provider: Arc<dyn confidential_ml_transport::AttestationProvider> =
@@ -259,7 +259,7 @@ async fn proxy_concurrent_connections() {
     let client_config = ClientProxyConfig {
         listen_addr: client_proxy_addr,
         enclave_addr: server_addr,
-        session_config: SessionConfig::default(),
+        session_config: SessionConfig::development(),
         max_connections: 0,
     };
     let client_provider: Arc<dyn confidential_ml_transport::AttestationProvider> =

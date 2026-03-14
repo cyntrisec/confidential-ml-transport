@@ -216,7 +216,7 @@ async fn mode_a_receiver(mut transport: DuplexStream) {
 async fn mode_b_sender(transport: DuplexStream) {
     let provider = MockProvider::new();
     let verifier = MockVerifier::new();
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
     let mut ch = SecureChannel::accept_with_attestation(transport, &provider, &verifier, config)
         .await
         .unwrap();
@@ -232,7 +232,7 @@ async fn mode_b_sender(transport: DuplexStream) {
 async fn mode_b_receiver(transport: DuplexStream) {
     let provider = MockProvider::new();
     let verifier = MockVerifier::new();
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
     let mut ch = SecureChannel::connect_with_attestation(transport, &provider, &verifier, config)
         .await
         .unwrap();

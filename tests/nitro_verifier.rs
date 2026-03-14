@@ -169,7 +169,7 @@ async fn nitro_verifier_handshake_integration() {
 
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
 
     let server_handle = tokio::spawn(async move {
         let server_verifier = MockVerifier::new();
@@ -177,7 +177,7 @@ async fn nitro_verifier_handshake_integration() {
     });
 
     let client_provider = MockProvider::new();
-    let client_config = SessionConfig::default();
+    let client_config = SessionConfig::development();
     let mut client = SecureChannel::connect_with_attestation(
         client_io,
         &client_provider,

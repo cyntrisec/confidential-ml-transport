@@ -76,14 +76,14 @@ async fn sev_snp_handshake_rejects_empty_cert_chain() {
 
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
 
     let _server_handle = tokio::spawn(async move {
         let server_verifier = SevSnpVerifier::new(None);
         SecureChannel::accept_with_attestation(server_io, &provider, &server_verifier, config).await
     });
 
-    let client_config = SessionConfig::default();
+    let client_config = SessionConfig::development();
     let client_provider = SyntheticSevSnpProvider::new(measurement);
     let result = SecureChannel::connect_with_attestation(
         client_io,
@@ -111,13 +111,13 @@ async fn sev_snp_handshake_rejects_wrong_measurement() {
 
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
     let _server_handle = tokio::spawn(async move {
         let server_verifier = SevSnpVerifier::new(None);
         SecureChannel::accept_with_attestation(server_io, &provider, &server_verifier, config).await
     });
 
-    let client_config = SessionConfig::default();
+    let client_config = SessionConfig::development();
     let client_provider = SyntheticSevSnpProvider::new(measurement);
     let result = SecureChannel::connect_with_attestation(
         client_io,

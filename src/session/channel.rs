@@ -338,7 +338,7 @@ mod tests {
         let (client_io, server_io) = tokio::io::duplex(64 * 1024);
         let provider = MockProvider::new();
         let verifier = MockVerifier::new();
-        let config = SessionConfig::default();
+        let config = SessionConfig::development();
 
         let (client, server) = tokio::try_join!(
             SecureChannel::connect_with_attestation(
@@ -362,7 +362,7 @@ mod tests {
         let (client_io, server_io) = tokio::io::duplex(64 * 1024);
         let provider = MockProvider::new();
         let verifier = MockVerifier::new();
-        let config = SessionConfig::default();
+        let config = SessionConfig::development();
 
         let (mut client, mut server) = tokio::try_join!(
             SecureChannel::connect_with_attestation(

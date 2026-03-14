@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "vsock-nitro")]
     let verifier = create_verifier()?;
 
-    let config = SessionConfig::default();
+    let config = SessionConfig::development();
 
     // Warmup: one full connection to ensure server is ready
     {

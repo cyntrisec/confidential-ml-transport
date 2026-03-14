@@ -31,7 +31,7 @@ fn bench_reconnect(c: &mut Criterion) {
             let p = payload.clone();
             rt.block_on(async {
                 let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
-                let config = SessionConfig::default();
+                let config = SessionConfig::development();
 
                 let (server_ch, client_ch) = tokio::join!(
                     SecureChannel::accept_with_attestation(
@@ -77,7 +77,7 @@ fn bench_reconnect(c: &mut Criterion) {
         // Establish session once, reuse across iterations.
         let (client_ch, _server_rx) = rt.block_on(async {
             let (client, server) = tokio::io::duplex(DUPLEX_SIZE);
-            let config = SessionConfig::default();
+            let config = SessionConfig::development();
 
             let (server_ch, client_ch) = tokio::join!(
                 SecureChannel::accept_with_attestation(
@@ -131,7 +131,7 @@ fn bench_reconnect(c: &mut Criterion) {
             rt.block_on(async {
                 // First session.
                 let (client1, server1) = tokio::io::duplex(DUPLEX_SIZE);
-                let config = SessionConfig::default();
+                let config = SessionConfig::development();
 
                 let (server_ch1, client_ch1) = tokio::join!(
                     SecureChannel::accept_with_attestation(

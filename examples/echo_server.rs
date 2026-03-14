@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             stream,
             &provider,
             &verifier,
-            SessionConfig::default(),
+            SessionConfig::development(),
         )
         .await
         .unwrap();
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stream,
         &provider,
         &verifier,
-        SessionConfig::default(),
+        SessionConfig::development(),
     )
     .await?;
 
