@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-15
+
+### Security
+
+- **Production defaults are now fail-closed** — `SecurityProfile::Production` (the default) requires measurement pinning. Sessions with `require_measurements: true` (the default in production profile) reject connections from enclaves with unknown measurements. Previously, measurement verification was opt-in.
+- **TDX collateral key binding** — PCK leaf certificate public key is now bound to the quote's attestation key, preventing collateral substitution.
+- **CRL validation hardened** — issuer match, CRL signature verification, `lastUpdate`/`nextUpdate` enforcement added before revocation checks.
+- **Session key zeroization** — ephemeral keys and derived session material are now `Zeroize`-on-drop.
+- **7 attestation verification vulnerabilities fixed** — TDX quote header validation, Nitro CBOR parsing bounds, certificate chain depth limits, nonce binding enforcement, and more.
+
+### Added
+
+- **Complete TDX DCAP verification** — QE Identity validation, TCB Info level evaluation, and FMSPC matching. Previously only PCK chain and CRL were verified; now the full Intel DCAP verification flow is implemented.
+- **`CollateralIncomplete` error variant** — partial DCAP bundles (one of `qe_identity_json`/`tcb_info_json` present but not the other) are rejected early with a clear error instead of silently skipping verification.
+- **`SecurityProfile` enum** — `Production` (fail-closed, measurement pinning required) and `Development` (permissive) profiles in session config.
+
+### Changed
+
+- `require_measurements` defaults to `true` in `Production` security profile (was `false`).
+- Attestation backend count: 5 (unchanged).
+- Test count: ~105 → ~167.
+
+## [0.4.0] - 2026-03-01
+
+### Security
+
+- **Mutual attestation handshake (v3)** — both sides now attest during the handshake, not just the responder. Protocol version bumped from 2 to 3. V2 clients are rejected with a clear error.
+- **`require_measurements` config option** — callers can enforce that the peer's attestation document contains expected measurements. When enabled, connections from enclaves with unknown or missing measurements are rejected.
+
+### Changed
+
+- Handshake protocol version: 2 → 3 (mutual attestation).
+- `SessionConfig` gains `require_measurements: bool` and `expected_measurements: Vec<ExpectedMeasurement>`.
+- Breaking: handshake wire format changed (not backward compatible with 0.3.x peers).
+
 ## [0.3.0] - 2026-02-12
 
 ### Added
@@ -128,6 +163,8 @@ Initial release.
 - Session retry with exponential backoff.
 - Measurement/PCR verification.
 
+[0.5.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.1.3...v0.2.0
