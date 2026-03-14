@@ -2362,6 +2362,7 @@ pub fn build_synthetic_tdx_quote_with_key(
 /// verification tests). Also allows setting TEE_TCB_SVN and PCE SVN values
 /// for TCB Info matching tests.
 #[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
 pub fn build_synthetic_tdx_quote_full(
     reportdata: [u8; 64],
     mrtd: [u8; 48],
@@ -3746,6 +3747,7 @@ mod tests {
     ///
     /// Signs the enclaveIdentity JSON with the provided key and returns
     /// the complete response JSON (enclaveIdentity + signature).
+    #[allow(clippy::too_many_arguments)]
     fn build_test_qe_identity_json(
         mrsigner: &[u8],
         isvprodid: u16,
