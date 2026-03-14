@@ -416,9 +416,17 @@ cargo build --all-features
 
 ## Testing
 
-The full test suite requires `--features "mock,tcp,tdx"` (98 lib + 68 integration + 1 doc-test = 167 total).
-Using `--all-features` also works but requires `tss2-sys` headers (for the `vsock` feature).
-Without TDX headers, `cargo test --features "mock,tcp"` runs 43 tests.
+Test counts depend on features and environment:
+
+| Command | Tests | Notes |
+|---------|-------|-------|
+| `cargo test --features "mock,tcp,tdx"` | ~167 | Full suite (98 lib + 68 integration + 1 doc-test). Proxy tests need socket permissions. |
+| `cargo test --features "mock,tcp"` | ~43 | Without TDX attestation tests |
+| `cargo test --all-features` | ~167 | Requires `tss2-sys` headers for `vsock` feature |
+
+Some integration tests (proxy, session) bind TCP ports and may fail in sandboxed
+environments that restrict `SO_REUSEADDR` or ephemeral port binding. CI is the
+authoritative source for full-suite pass/fail.
 
 ```bash
 # Recommended: full suite without system dependencies
