@@ -357,8 +357,9 @@ pub struct TdxCollateral {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QeIdentityResponse {
-    /// The signed QE identity structure (raw JSON string for signature verification).
-    pub enclave_identity: serde_json::Value,
+    /// The signed QE identity structure preserved as raw JSON bytes for
+    /// signature verification.
+    pub enclave_identity: Box<serde_json::value::RawValue>,
     /// Hex-encoded ECDSA-P256 signature over the UTF-8 bytes of `enclaveIdentity`.
     pub signature: String,
 }
@@ -425,8 +426,9 @@ pub struct QeTcbComponent {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TcbInfoResponse {
-    /// The signed TCB Info structure (raw JSON for signature verification).
-    pub tcb_info: serde_json::Value,
+    /// The signed TCB Info structure preserved as raw JSON bytes for
+    /// signature verification.
+    pub tcb_info: Box<serde_json::value::RawValue>,
     /// Hex-encoded ECDSA-P256 signature over the UTF-8 bytes of `tcbInfo`.
     pub signature: String,
 }
@@ -1702,12 +1704,9 @@ fn verify_qe_identity(
         TdxVerifyError::QeIdentityInvalid(format!("failed to parse QE Identity response: {e}"))
     })?;
 
-    // Verify signature over the raw enclaveIdentity JSON.
-    let identity_json_str = response.enclave_identity.to_string();
-    // The signature is over the raw JSON text of enclave_identity as it appears
-    // in the response. We use the serialized Value representation.
+    // Verify signature over the raw enclaveIdentity JSON as delivered by PCS.
     verify_json_signature(
-        identity_json_str.as_bytes(),
+        response.enclave_identity.get().as_bytes(),
         &response.signature,
         tcb_signing_key,
     )
@@ -1715,7 +1714,7 @@ fn verify_qe_identity(
 
     // Parse the enclave identity structure.
     let identity: QeIdentity =
-        serde_json::from_value(response.enclave_identity.clone()).map_err(|e| {
+        serde_json::from_str(response.enclave_identity.get()).map_err(|e| {
             TdxVerifyError::QeIdentityInvalid(format!(
                 "failed to parse enclaveIdentity fields: {e}"
             ))
@@ -1835,17 +1834,16 @@ fn verify_tcb_info(
         TdxVerifyError::TcbInfoInvalid(format!("failed to parse TCB Info response: {e}"))
     })?;
 
-    // Verify signature over the raw tcbInfo JSON.
-    let tcb_info_json_str = response.tcb_info.to_string();
+    // Verify signature over the raw tcbInfo JSON as delivered by PCS.
     verify_json_signature(
-        tcb_info_json_str.as_bytes(),
+        response.tcb_info.get().as_bytes(),
         &response.signature,
         tcb_signing_key,
     )
     .map_err(|_| TdxVerifyError::TcbInfoInvalid("TCB Info signature invalid".into()))?;
 
     // Parse the TCB Info structure.
-    let tcb_info: TcbInfo = serde_json::from_value(response.tcb_info.clone()).map_err(|e| {
+    let tcb_info: TcbInfo = serde_json::from_str(response.tcb_info.get()).map_err(|e| {
         TdxVerifyError::TcbInfoInvalid(format!("failed to parse tcbInfo fields: {e}"))
     })?;
 

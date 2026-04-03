@@ -39,7 +39,7 @@ pub enum Message {
 ///
 /// **Security notes:**
 /// - All post-handshake frames are encrypted and authenticated via AEAD.
-/// - The v3 handshake performs mutual attestation: both the initiator and
+/// - The current handshake performs mutual attestation: both the initiator and
 ///   responder send attestation documents and verify each other's identity.
 ///   Both sides receive `peer_attestation: Some(verified)`.
 /// - This channel authenticates the data stream but does not bind to a specific
@@ -196,11 +196,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         plaintext: &[u8],
         extra_flags: u8,
     ) -> Result<Frame, Error> {
-        let flags_byte = Flags::ENCRYPTED | extra_flags;
-        let (ciphertext, seq) = self.sealer.seal(plaintext, msg_type as u8, flags_byte)?;
-        if seq > u32::MAX as u64 {
+        if self.sealer.sequence() > u32::MAX as u64 {
             return Err(crate::error::CryptoError::NonceOverflow.into());
         }
+
+        let flags_byte = Flags::ENCRYPTED | extra_flags;
+        let (ciphertext, seq) = self.sealer.seal(plaintext, msg_type as u8, flags_byte)?;
+        debug_assert!(seq <= u32::MAX as u64);
         Ok(Frame {
             header: FrameHeader {
                 version: PROTOCOL_VERSION,

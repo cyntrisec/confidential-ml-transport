@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-03
+
+### Security
+
+- **Transcript hashing hardened** — protocol version bumped from 3 to 4 so transcript derivation now uses explicit labeled framing instead of relying on implicit fixed-width concatenation.
+- **TDX PCS signature verification hardened** — QE Identity and TCB Info signatures are now verified over the raw JSON bytes returned by Intel PCS, avoiding acceptance drift from JSON reserialization.
+- **Sequence exhaustion rejected early** — channels now reject attempts to send frames past the 32-bit on-wire sequence limit before AEAD work starts.
+- **Cipher state wipe matches intent** — sealing/opening contexts now scrub cipher state with volatile byte stores instead of non-volatile bulk writes.
+
+### Changed
+
+- Handshake protocol version: 3 -> 4 (labeled transcript framing; not backward compatible with 0.5.x peers).
+- Handshake nonces now use `OsRng` consistently.
+- Local development `.gitignore` now covers `.env`, key material, and `.target_codex*` build directories.
+
 ## [0.5.0] - 2026-03-15
 
 ### Security
@@ -163,6 +178,7 @@ Initial release.
 - Session retry with exponential backoff.
 - Measurement/PCR verification.
 
+[0.6.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.2.1...v0.3.0

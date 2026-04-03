@@ -37,6 +37,15 @@ fn build_nonce(counter: u64) -> Nonce {
     *Nonce::from_slice(&nonce_bytes)
 }
 
+unsafe fn wipe_value_volatile<T>(value: &mut T) {
+    let ptr = value as *mut T as *mut u8;
+    let size = core::mem::size_of::<T>();
+    for offset in 0..size {
+        core::ptr::write_volatile(ptr.add(offset), 0);
+    }
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+}
+
 /// Context for encrypting outgoing messages.
 pub struct SealingContext {
     cipher: ChaCha20Poly1305,
@@ -48,14 +57,9 @@ impl Drop for SealingContext {
     fn drop(&mut self) {
         self.session_id.zeroize();
         self.sequence = 0;
-        // ChaCha20Poly1305 does not impl Zeroize. Use volatile writes to
-        // clear the cipher struct (which contains the key) on drop.
-        unsafe {
-            let ptr = &mut self.cipher as *mut ChaCha20Poly1305 as *mut u8;
-            let size = core::mem::size_of::<ChaCha20Poly1305>();
-            core::ptr::write_bytes(ptr, 0, size);
-            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-        }
+        // ChaCha20Poly1305 does not impl Zeroize. Wipe the cipher state using
+        // volatile byte stores so the compiler cannot elide the scrub.
+        unsafe { wipe_value_volatile(&mut self.cipher) };
     }
 }
 
@@ -125,14 +129,9 @@ impl Drop for OpeningContext {
     fn drop(&mut self) {
         self.session_id.zeroize();
         self.last_sequence = None;
-        // ChaCha20Poly1305 does not impl Zeroize. Use volatile writes to
-        // clear the cipher struct (which contains the key) on drop.
-        unsafe {
-            let ptr = &mut self.cipher as *mut ChaCha20Poly1305 as *mut u8;
-            let size = core::mem::size_of::<ChaCha20Poly1305>();
-            core::ptr::write_bytes(ptr, 0, size);
-            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-        }
+        // ChaCha20Poly1305 does not impl Zeroize. Wipe the cipher state using
+        // volatile byte stores so the compiler cannot elide the scrub.
+        unsafe { wipe_value_volatile(&mut self.cipher) };
     }
 }
 

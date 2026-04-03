@@ -1,6 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use hkdf::Hkdf;
-use rand::Rng;
+use rand::rngs::OsRng;
+use rand::RngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -41,7 +42,7 @@ impl Drop for HandshakeResult {
 
 // -- Wire helpers --
 
-/// Encode an initiator hello message (v3: includes attestation document).
+/// Encode an initiator hello message for the current mutual-attestation handshake.
 ///
 /// Wire format: `[1:u8 | pk:32B | nonce:32B | doc_len:4B | attestation_doc:var]`
 fn encode_initiator_hello(
@@ -87,7 +88,7 @@ const MAX_ATTESTATION_DOC_SIZE: usize = 64 * 1024;
 
 /// Parse a hello message containing a public key, nonce, and attestation document.
 ///
-/// Used for both initiator (msg_num=1) and responder (msg_num=2) hellos in v3.
+/// Used for both initiator (msg_num=1) and responder (msg_num=2) hellos.
 fn parse_hello_with_attestation(
     payload: &[u8],
     expected_msg_num: u8,
@@ -317,7 +318,7 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
 ) -> Result<HandshakeResult, crate::error::Error> {
     let keypair = KeyPair::generate();
     let mut nonce = [0u8; 32];
-    rand::thread_rng().fill(&mut nonce);
+    OsRng.fill_bytes(&mut nonce);
     let pk_bytes = keypair.public.to_bytes();
 
     // Generate our attestation binding our public key.
@@ -450,7 +451,7 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     // Generate our keypair and nonce.
     let keypair = KeyPair::generate();
     let mut nonce = [0u8; 32];
-    rand::thread_rng().fill(&mut nonce);
+    OsRng.fill_bytes(&mut nonce);
     let pk_bytes = keypair.public.to_bytes();
 
     // Step 2: Generate our attestation binding our public key.

@@ -17,7 +17,9 @@ pub const MAGIC: u16 = 0xCF4D;
 ///   in the unencrypted header without breaking AEAD verification)
 /// - v3: Mutual attestation — both initiator and responder send attestation
 ///   documents. Transcript binds both attestation hashes.
-pub const PROTOCOL_VERSION: u8 = 3;
+/// - v4: Transcript hash uses explicit labeled framing for future-proof domain
+///   separation instead of relying on implicit fixed-width concatenation.
+pub const PROTOCOL_VERSION: u8 = 4;
 
 /// Fixed header size in bytes.
 pub const HEADER_SIZE: usize = 13;

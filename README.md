@@ -129,7 +129,7 @@ A 3-message protocol establishes an encrypted session:
 2. Server responds with its public key, nonce, and an attestation document binding its public key
 3. Client verifies the attestation, derives session keys, and sends a confirmation hash proving key agreement
 
-Session keys are derived via HKDF-SHA256 from the X25519 shared secret, salted with a transcript hash that binds: `SHA256(attestation_hash || sorted(pk_a, pk_b) || nonce_a XOR nonce_b || protocol_version)`.
+Session keys are derived via HKDF-SHA256 from the X25519 shared secret, salted with a transcript hash that binds both attestation hashes, both ephemeral public keys, both nonces, and the protocol version using explicit labeled framing.
 
 ## Usage
 
