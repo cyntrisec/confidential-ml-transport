@@ -41,6 +41,13 @@ const MEASUREMENT_SIZE: usize = 48;
 /// Offset of RTMR0 within the TD quote body.
 const RTMR0_OFFSET: usize = 328;
 
+/// Offset of SEAM_ATTRIBUTES within the TD quote body (8 bytes).
+const SEAM_ATTRIBUTES_OFFSET: usize = 112;
+/// Offset of TD_ATTRIBUTES within the TD quote body (8 bytes).
+const TD_ATTRIBUTES_OFFSET: usize = 120;
+/// Size of each attributes field (8 bytes = 64 bits).
+const ATTRIBUTES_SIZE: usize = 8;
+
 /// Offset of REPORTDATA within the TD quote body.
 const REPORTDATA_OFFSET: usize = 520;
 /// Size of REPORTDATA (64 bytes).
@@ -96,6 +103,34 @@ const QE_ATTRIBUTES_SIZE: usize = 16;
 const TEE_TCB_SVN_OFFSET: usize = 0;
 /// Size of TEE_TCB_SVN (16 bytes = 16 SVN component values).
 const TEE_TCB_SVN_SIZE: usize = 16;
+
+// ---------------------------------------------------------------------------
+// PCK certificate SGX Extensions OID constants
+// ---------------------------------------------------------------------------
+// Intel SGX Extensions root: 1.2.840.113741.1.13.1
+// TCB sub-tree:              1.2.840.113741.1.13.1.2
+//   SGX_TCB_COMP01_SVN ..16: 1.2.840.113741.1.13.1.2.1 .. .16
+//   PCESVN:                  1.2.840.113741.1.13.1.2.17
+//   CPUSVN:                  1.2.840.113741.1.13.1.2.18
+//
+// OID prefix for TCB sub-tree (encoded DER bytes for 1.2.840.113741.1.13.1.2):
+//   06 0B 2A 86 48 86 F8 4D 01 0D 01 02
+// The final byte after this prefix is the component index (01-12 hex).
+
+/// DER-encoded OID prefix for 1.2.840.113741.1.13.1.2 (SGX TCB sub-tree).
+/// The encoded OID is 0B bytes: 2A 86 48 86 F8 4D 01 0D 01 02
+/// Preceded by tag 06 and length 0B.
+const SGX_TCB_OID_PREFIX: &[u8] = &[
+    0x06, 0x0B, 0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x01, 0x0D, 0x01, 0x02,
+];
+
+/// Number of SGX TCB component SVNs in a PCK certificate (COMP01..COMP16).
+const PCK_SGX_TCB_COMP_COUNT: usize = 16;
+/// Sub-OID index for PCESVN within the TCB sub-tree (0x11 = 17).
+const PCK_PCESVN_SUB_OID: u8 = 0x11;
+/// Sub-OID index for CPUSVN within the TCB sub-tree (0x12 = 18).
+#[allow(dead_code)]
+const PCK_CPUSVN_SUB_OID: u8 = 0x12;
 
 // ---------------------------------------------------------------------------
 // Structured TDX verification errors — M2 trust matrix codes
@@ -157,6 +192,9 @@ pub enum TdxVerifyError {
     NonceMismatch { expected: String, actual: String },
     /// TDX-POL-007: Collateral not yet valid or clock skew detected.
     CollateralTimeInvalid(String),
+    /// TDX-POL-008: TD is in DEBUG mode (TD_ATTRIBUTES bit 0 = 1).
+    /// A debug TD has no confidentiality — the VMM can read/write all TD memory.
+    DebugTdRejected,
 }
 
 impl fmt::Display for TdxVerifyError {
@@ -214,6 +252,10 @@ impl fmt::Display for TdxVerifyError {
             Self::CollateralTimeInvalid(msg) => {
                 write!(f, "TDX_COLLATERAL_TIME_INVALID: {msg}")
             }
+            Self::DebugTdRejected => write!(
+                f,
+                "TDX_DEBUG_TD_REJECTED: TD is in DEBUG mode (TD_ATTRIBUTES bit 0 = 1)"
+            ),
         }
     }
 }
@@ -250,6 +292,7 @@ impl TdxVerifyError {
             Self::RtmrMismatch { .. } => "TDX_RTMR_MISMATCH",
             Self::NonceMismatch { .. } => "TDX_NONCE_MISMATCH",
             Self::CollateralTimeInvalid(_) => "TDX_COLLATERAL_TIME_INVALID",
+            Self::DebugTdRejected => "TDX_DEBUG_TD_REJECTED",
         }
     }
 
@@ -271,7 +314,8 @@ impl TdxVerifyError {
             | Self::MrtdMismatch { .. }
             | Self::RtmrMismatch { .. }
             | Self::NonceMismatch { .. }
-            | Self::CollateralTimeInvalid(_) => "T4_POLICY",
+            | Self::CollateralTimeInvalid(_)
+            | Self::DebugTdRejected => "T4_POLICY",
         }
     }
 }
@@ -284,7 +328,7 @@ impl TdxVerifyError {
 ///
 /// Controls which policy checks the verifier enforces. Only fields that are
 /// `Some` or non-empty are checked; unset fields are ignored.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TdxVerifyPolicy {
     /// Expected MRTD value (48 bytes). TDX-POL-004.
     pub expected_mrtd: Option<Vec<u8>>,
@@ -302,6 +346,26 @@ pub struct TdxVerifyPolicy {
     /// If empty, defaults to `[UpToDate, SWHardeningNeeded]`.
     /// Set explicitly to control which TCB statuses are acceptable.
     pub accepted_tcb_statuses: Vec<TcbStatus>,
+    /// Whether to reject debug-mode TDs (TD_ATTRIBUTES bit 0 = 1).
+    /// Default: true. A debug TD has no confidentiality — the VMM can
+    /// read/write all TD private memory via debug SEAMCALLs.
+    /// Reference: Intel TDX Module spec, CVE-2025-30513 (CVSS 8.4).
+    pub reject_debug_td: bool,
+}
+
+impl Default for TdxVerifyPolicy {
+    fn default() -> Self {
+        Self {
+            expected_mrtd: None,
+            expected_rtmrs: BTreeMap::new(),
+            expected_nonce: None,
+            expected_public_key: None,
+            collateral: None,
+            require_collateral: false,
+            accepted_tcb_statuses: Vec::new(),
+            reject_debug_td: true, // reject DEBUG TDs by default
+        }
+    }
 }
 
 /// DCAP collateral bundle for TDX quote trust chain verification (T3_CHAIN).
@@ -820,6 +884,8 @@ impl TdxVerifier {
             verify_ecdsa_signature(&quote, sig_section_offset, HEADER_SIZE + body_size)?;
 
         // Extract PCE SVN from the quote header (offset 10, u16 LE).
+        // This is used as a fallback when the PCK cert doesn't have SGX extensions
+        // (synthetic/test certs). For real certs, PCESVN comes from the PCK cert.
         let header_pce_svn = if quote.len() >= 12 {
             u16::from_le_bytes([quote[10], quote[11]])
         } else {
@@ -834,34 +900,31 @@ impl TdxVerifier {
                 .collateral
                 .as_ref()
                 .ok_or(TdxVerifyError::CollateralMissing)?;
-            // Step 0: Reject partial DCAP bundles early — one of (qe_identity,
-            // tcb_info) present but not the other is a configuration error.
+            // Step 0: When collateral is required, TCB Info must be present
+            // for a DCAP-backed trust decision. Reject if missing.
             let has_qe = collateral.qe_identity_json.is_some();
             let has_tcb = collateral.tcb_info_json.is_some();
-            if has_qe != has_tcb {
-                let missing = if !has_qe {
-                    "qe_identity_json"
-                } else {
-                    "tcb_info_json"
-                };
+            if !has_tcb {
                 return Err(TdxVerifyError::CollateralIncomplete {
-                    missing: missing.to_string(),
+                    missing: "tcb_info_json (required when require_collateral=true)".into(),
+                });
+            }
+            if !has_qe {
+                return Err(TdxVerifyError::CollateralIncomplete {
+                    missing: "qe_identity_json (required when require_collateral=true)".into(),
                 });
             }
             // Step 1: PCK cert chain + CRL.
             verify_pck_chain(collateral, Some(&quote_attestation_key))?;
             // Step 2-5: Full DCAP verification (QE Identity, TCB Info, FMSPC).
-            if has_qe && has_tcb {
-                let status = verify_dcap_collateral(
-                    collateral,
-                    &quote,
-                    &body,
-                    header_pce_svn,
-                    sig_section_offset,
-                )?;
-                tcb_status = Some(status);
-            }
-            // else: neither present → PCK-only verification (valid)
+            let status = verify_dcap_collateral(
+                collateral,
+                &quote,
+                &body,
+                sig_section_offset,
+                header_pce_svn,
+            )?;
+            tcb_status = Some(status);
         } else if let Some(ref collateral) = self.policy.collateral {
             // Collateral provided but not required — verify if present.
             verify_pck_chain(collateral, Some(&quote_attestation_key))?;
@@ -870,8 +933,8 @@ impl TdxVerifier {
                     collateral,
                     &quote,
                     &body,
-                    header_pce_svn,
                     sig_section_offset,
+                    header_pce_svn,
                 )?;
                 tcb_status = Some(status);
             }
@@ -895,6 +958,13 @@ impl TdxVerifier {
                     status
                 )));
             }
+        }
+
+        // T4_POLICY: Reject debug-mode TDs (TDX-POL-008).
+        // TD_ATTRIBUTES bit 0 = DEBUG. When set, the VMM has full read/write
+        // access to TD private memory via debug SEAMCALLs — no confidentiality.
+        if self.policy.reject_debug_td && (body.td_attributes & 0x01) != 0 {
+            return Err(TdxVerifyError::DebugTdRejected);
         }
 
         // Extract REPORTDATA fields.
@@ -1093,6 +1163,11 @@ impl TdxQuoteHeader {
 struct TdxQuoteBody {
     /// TEE TCB SVN values (16 bytes). Used for TCB level matching.
     tee_tcb_svn: [u8; 16],
+    /// SEAM module attributes (8 bytes, offset 112). MBZ in TDX 1.0.
+    #[allow(dead_code)]
+    seam_attributes: u64,
+    /// TD attributes (8 bytes, offset 120). Bit 0 = DEBUG.
+    td_attributes: u64,
     mrtd: [u8; 48],
     rtmr0: [u8; 48],
     rtmr1: [u8; 48],
@@ -1114,6 +1189,17 @@ impl TdxQuoteBody {
         let mut tee_tcb_svn = [0u8; 16];
         tee_tcb_svn
             .copy_from_slice(&body[TEE_TCB_SVN_OFFSET..TEE_TCB_SVN_OFFSET + TEE_TCB_SVN_SIZE]);
+
+        let seam_attributes = u64::from_le_bytes(
+            body[SEAM_ATTRIBUTES_OFFSET..SEAM_ATTRIBUTES_OFFSET + ATTRIBUTES_SIZE]
+                .try_into()
+                .unwrap(),
+        );
+        let td_attributes = u64::from_le_bytes(
+            body[TD_ATTRIBUTES_OFFSET..TD_ATTRIBUTES_OFFSET + ATTRIBUTES_SIZE]
+                .try_into()
+                .unwrap(),
+        );
 
         let mut mrtd = [0u8; 48];
         mrtd.copy_from_slice(&body[MRTD_OFFSET..MRTD_OFFSET + MEASUREMENT_SIZE]);
@@ -1141,6 +1227,8 @@ impl TdxQuoteBody {
 
         Ok(Self {
             tee_tcb_svn,
+            seam_attributes,
+            td_attributes,
             mrtd,
             rtmr0,
             rtmr1,
@@ -1616,6 +1704,136 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 // ---------------------------------------------------------------------------
+// PCK certificate SGX TCB extraction (F1 fix)
+// ---------------------------------------------------------------------------
+
+/// SGX TCB values extracted from a PCK certificate's SGX Extensions.
+///
+/// These values are used for TCB level matching per Intel DCAP spec:
+/// - `sgx_comp_svns` are matched against `tcbInfo.sgxtcbcomponents`
+/// - `pcesvn` is matched against `tcbInfo.tcbLevels[].tcb.pcesvn`
+///
+/// Reference: Intel SGX PCK Certificate Profile, Section 3.2;
+///            Intel SGX-TDX-DCAP-QuoteVerificationLibrary `TcbLevelCheck.cpp`.
+#[derive(Debug, Clone)]
+pub struct PckTcbValues {
+    /// SGX TCB component SVN values (COMP01..COMP16) from PCK cert OIDs
+    /// 1.2.840.113741.1.13.1.2.1 through 1.2.840.113741.1.13.1.2.16.
+    pub sgx_comp_svns: [u16; PCK_SGX_TCB_COMP_COUNT],
+    /// PCESVN from PCK cert OID 1.2.840.113741.1.13.1.2.17.
+    pub pcesvn: u16,
+}
+
+/// Extract SGX TCB component SVNs and PCESVN from a PCK certificate.
+///
+/// Scans the DER-encoded certificate for the SGX Extensions OID subtree
+/// (1.2.840.113741.1.13.1.2.*) and reads the INTEGER values for each
+/// component (COMP01..COMP16) and PCESVN.
+///
+/// Strategy: same DER byte scanning approach as `extract_fmspc_from_pck_cert`,
+/// avoiding OpenSSL extension API version differences.
+fn extract_pck_tcb_values(cert: &openssl::x509::X509Ref) -> Result<PckTcbValues, TdxVerifyError> {
+    let cert_der = cert.to_der().map_err(|e| {
+        TdxVerifyError::PckChainInvalid(format!(
+            "failed to encode PCK cert to DER for TCB extraction: {e}"
+        ))
+    })?;
+
+    let mut result = PckTcbValues {
+        sgx_comp_svns: [0u16; PCK_SGX_TCB_COMP_COUNT],
+        pcesvn: 0,
+    };
+
+    // Scan for each occurrence of the SGX TCB OID prefix.
+    // Each match is: [06 0B 2A 86 48 86 F8 4D 01 0D 01 02] [sub_oid_byte]
+    // Followed by an ASN.1 INTEGER value.
+    let prefix_len = SGX_TCB_OID_PREFIX.len();
+    let mut pos = 0;
+    let mut found_count = 0u32;
+
+    while pos + prefix_len + 1 < cert_der.len() {
+        if let Some(match_pos) = find_subsequence(&cert_der[pos..], SGX_TCB_OID_PREFIX) {
+            let abs_pos = pos + match_pos;
+            let sub_oid_pos = abs_pos + prefix_len;
+
+            if sub_oid_pos >= cert_der.len() {
+                break;
+            }
+
+            let sub_oid = cert_der[sub_oid_pos];
+            let value_start = sub_oid_pos + 1;
+
+            if value_start >= cert_der.len() {
+                pos = sub_oid_pos + 1;
+                continue;
+            }
+
+            // Parse the ASN.1 INTEGER that follows the OID.
+            // Format: 02 <length> <value_bytes>
+            if cert_der[value_start] == 0x02 && value_start + 1 < cert_der.len() {
+                let int_len = cert_der[value_start + 1] as usize;
+                let int_data_start = value_start + 2;
+                if int_data_start + int_len <= cert_der.len() && int_len <= 4 {
+                    // Parse unsigned integer (ASN.1 INTEGER is signed, but SVNs
+                    // are always non-negative; skip leading zero padding byte).
+                    let int_bytes = &cert_der[int_data_start..int_data_start + int_len];
+                    let value = parse_asn1_unsigned_int(int_bytes);
+
+                    if (0x01..=0x10).contains(&sub_oid) {
+                        // COMP01..COMP16 (sub OIDs 1..16)
+                        let idx = (sub_oid - 0x01) as usize;
+                        result.sgx_comp_svns[idx] = value as u16;
+                        found_count += 1;
+                    } else if sub_oid == PCK_PCESVN_SUB_OID {
+                        // PCESVN (sub OID 17)
+                        result.pcesvn = value as u16;
+                        found_count += 1;
+                    }
+                }
+            }
+
+            pos = sub_oid_pos + 1;
+        } else {
+            break;
+        }
+    }
+
+    if found_count == 0 {
+        return Err(TdxVerifyError::PckChainInvalid(
+            "no SGX TCB component OIDs found in PCK certificate".into(),
+        ));
+    }
+
+    tracing::debug!(
+        sgx_comp_svns = ?result.sgx_comp_svns,
+        pcesvn = result.pcesvn,
+        found_count,
+        "extracted PCK TCB values from certificate"
+    );
+
+    Ok(result)
+}
+
+/// Parse an unsigned integer from ASN.1 INTEGER bytes.
+///
+/// ASN.1 INTEGER is signed; a leading 0x00 byte is padding when the
+/// high bit of the value is set. This function strips the padding and
+/// returns the unsigned value (up to u32).
+fn parse_asn1_unsigned_int(bytes: &[u8]) -> u32 {
+    // Skip leading zero padding (ASN.1 sign byte).
+    let trimmed = if bytes.len() > 1 && bytes[0] == 0x00 {
+        &bytes[1..]
+    } else {
+        bytes
+    };
+    let mut value: u32 = 0;
+    for &b in trimmed {
+        value = (value << 8) | (b as u32);
+    }
+    value
+}
+
+// ---------------------------------------------------------------------------
 // ECDSA-P256 signature verification for JSON structures
 // ---------------------------------------------------------------------------
 
@@ -1814,14 +2032,16 @@ fn verify_qe_identity(
 ///
 /// Checks:
 /// - TCB Info JSON signature is valid (signed by TCB Signing key)
-/// - Matches the quote's TEE_TCB_SVN and PCE SVN against TCB levels
-/// - Returns the matched TCB status
+/// - Two-phase TCB level matching per Intel DCAP spec:
+///   - Phase 1: `sgxtcbcomponents` matched against PCK cert SGX TCB SVNs
+///   - Phase 2: `tdxtcbcomponents` matched against quote body TEE_TCB_SVN
+///   - PCESVN matched against PCK cert PCESVN
 ///
-/// Reference: Intel TDX DCAP, "TCB Level Matching" algorithm.
+/// Reference: Intel SGX-TDX-DCAP-QuoteVerificationLibrary, `TcbLevelCheck.cpp`.
 fn verify_tcb_info(
     collateral: &TdxCollateral,
     tee_tcb_svn: &[u8; 16],
-    header_pce_svn: u16,
+    pck_tcb: &PckTcbValues,
     tcb_signing_key: &openssl::pkey::PKeyRef<openssl::pkey::Public>,
 ) -> Result<(TcbStatus, TcbInfo), TdxVerifyError> {
     let tcb_info_json = collateral
@@ -1847,81 +2067,78 @@ fn verify_tcb_info(
         TdxVerifyError::TcbInfoInvalid(format!("failed to parse tcbInfo fields: {e}"))
     })?;
 
-    // Match TCB level.
+    // Match TCB level using the two-phase algorithm from Intel DCAP.
     //
-    // Algorithm (Intel DCAP spec):
-    // For each TCB level (ordered descending), check if ALL of:
-    //   - Each SGX TCB component SVN from the level <= corresponding quote SVN
-    //   - Each TDX TCB component SVN from the level <= corresponding TEE_TCB_SVN byte
-    //   - PCESVN from the level <= quote header's PCE_SVN
+    // Per Intel SGX-TDX-DCAP-QuoteVerificationLibrary (TcbLevelCheck.cpp):
+    //   Phase 1: sgxtcbcomponents matched against PCK cert's SGX TCB SVNs
+    //   Phase 2: tdxtcbcomponents matched against quote body's TEE_TCB_SVN
+    //   PCESVN matched against PCK cert's PCESVN
     //
-    // The first matching level determines the TCB status.
+    // This is NOT the same as using TEE_TCB_SVN for both (the previous
+    // incorrect behavior). The PCK cert SGX SVNs track CPU microcode/firmware
+    // versions, while TEE_TCB_SVN tracks TDX Module versions.
     //
-    // For TDX quotes, the quote header contains PCE_SVN at offset 10.
-    // The TD quote body contains TEE_TCB_SVN[0..15] which maps to
-    // tdxtcbcomponents[0..15].
-    // SGX TCB components map to CPUSVN values from the platform.
-    //
-    // Note: For TDX TCBInfo v3, SGX TCB components correspond to the
-    // platform's CPUSVN, and TDX components to the TEE_TCB_SVN.
+    // Reference: TcbLevelCheck.cpp:matchTcbLevels(), lines 132-185.
 
-    let matched_status = match_tcb_level(&tcb_info, tee_tcb_svn, header_pce_svn)?;
+    let matched_status = match_tcb_level(&tcb_info, pck_tcb, tee_tcb_svn)?;
 
     Ok((matched_status, tcb_info))
 }
 
-/// Match the quote's SVN values against TCB levels to determine status.
+/// Two-phase TCB level matching per Intel DCAP specification.
 ///
-/// Returns the TCB status of the first matching level.
+/// Phase 1: `sgxtcbcomponents` matched against **PCK certificate** SGX TCB SVNs.
+/// Phase 2: `tdxtcbcomponents` matched against **quote body** TEE_TCB_SVN.
+/// PCESVN: matched against **PCK certificate** PCESVN.
+///
+/// Both phases must match at the same TCB level for that level to be selected.
+///
+/// Reference: Intel SGX-TDX-DCAP-QuoteVerificationLibrary,
+///            `TcbLevelCheck.cpp:matchTcbLevels()`, lines 132-185.
 fn match_tcb_level(
     tcb_info: &TcbInfo,
+    pck_tcb: &PckTcbValues,
     tee_tcb_svn: &[u8; 16],
-    pce_svn: u16,
 ) -> Result<TcbStatus, TdxVerifyError> {
     for level in &tcb_info.tcb_levels {
-        let mut all_match = true;
-
-        // Check SGX TCB components (up to 16).
-        // For TDX, these correspond to platform CPUSVN.
-        // In TDX quotes, TEE_TCB_SVN also covers these via a unified view,
-        // but the TCBInfo separates them.
+        // Phase 1: Check SGX TCB components against PCK cert values.
+        let mut sgx_match = true;
         for (i, component) in level.tcb.sgxtcbcomponents.iter().enumerate() {
-            if i >= 16 {
+            if i >= PCK_SGX_TCB_COMP_COUNT {
                 break;
             }
-            // Compare against TEE_TCB_SVN bytes (which encode both SGX+TDX SVNs
-            // in the Intel TDX architecture).
-            if (tee_tcb_svn[i] as u16) < component.svn {
-                all_match = false;
+            if pck_tcb.sgx_comp_svns[i] < component.svn {
+                sgx_match = false;
                 break;
             }
         }
 
-        if !all_match {
+        if !sgx_match {
             continue;
         }
 
-        // Check TDX TCB components.
+        // Check PCE SVN against PCK cert PCESVN.
+        if pck_tcb.pcesvn < level.tcb.pcesvn {
+            continue;
+        }
+
+        // Phase 2: Check TDX TCB components against quote body TEE_TCB_SVN.
+        let mut tdx_match = true;
         for (i, component) in level.tcb.tdxtcbcomponents.iter().enumerate() {
             if i >= 16 {
                 break;
             }
             if (tee_tcb_svn[i] as u16) < component.svn {
-                all_match = false;
+                tdx_match = false;
                 break;
             }
         }
 
-        if !all_match {
+        if !tdx_match {
             continue;
         }
 
-        // Check PCE SVN.
-        if pce_svn < level.tcb.pcesvn {
-            continue;
-        }
-
-        // All components match — this is our TCB level.
+        // Both phases match — this is our TCB level.
         return Ok(TcbStatus::from_str(&level.tcb_status));
     }
 
@@ -2067,9 +2284,56 @@ fn verify_dcap_collateral(
     collateral: &TdxCollateral,
     quote: &[u8],
     body: &TdxQuoteBody,
-    header_pce_svn: u16,
     sig_section_offset: usize,
+    header_pce_svn: u16,
 ) -> Result<TcbStatus, TdxVerifyError> {
+    // Step 0: Extract PCK TCB values from the leaf certificate.
+    // These are used for SGX TCB component matching (F1 fix).
+    //
+    // If the cert has Intel SGX Extensions (OID 1.2.840.113741.1.13.1) but
+    // we fail to parse the TCB sub-OIDs, that's a hard error — the cert is
+    // real but our parser can't handle it. If the cert has no SGX Extensions
+    // at all (synthetic/test cert), we fall back to TEE_TCB_SVN.
+    let pck_tcb = if !collateral.pck_chain_der.is_empty() {
+        let leaf_cert =
+            openssl::x509::X509::from_der(&collateral.pck_chain_der[0]).map_err(|e| {
+                TdxVerifyError::PckChainInvalid(format!(
+                    "failed to parse PCK leaf cert for TCB extraction: {e}"
+                ))
+            })?;
+        match extract_pck_tcb_values(&leaf_cert) {
+            Ok(values) => Some(values),
+            Err(e) => {
+                // Check whether the cert actually contains Intel SGX Extensions.
+                // If it does but we failed to parse TCB sub-OIDs, that's a real
+                // error even for opportunistic verification. If it doesn't have
+                // SGX Extensions at all, it's a synthetic/test cert and fallback
+                // is acceptable.
+                let cert_der = leaf_cert.to_der().unwrap_or_default();
+                let sgx_ext_root_oid: &[u8] = &[
+                    0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x01, 0x0D, 0x01,
+                ];
+                let has_sgx_ext = find_subsequence(&cert_der, sgx_ext_root_oid).is_some();
+
+                if has_sgx_ext {
+                    // Cert has Intel SGX Extensions but TCB parsing failed —
+                    // this is a real parsing error, not a missing-extension case.
+                    return Err(TdxVerifyError::PckChainInvalid(format!(
+                        "PCK cert has SGX Extensions but TCB extraction failed: {e}"
+                    )));
+                }
+                // Cert has no SGX Extensions — synthetic/test cert, fallback OK.
+                tracing::warn!(
+                    "PCK cert has no SGX Extensions (synthetic/test cert). \
+                    TCB matching will use quote-only fallback."
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Step 1: Verify TCB signing chain and get signing key.
     let tcb_signing_key = verify_tcb_signing_chain(collateral)?;
 
@@ -2091,61 +2355,98 @@ fn verify_dcap_collateral(
             let _qe_tcb_status = verify_qe_identity(collateral, &qe_report, &tcb_signing_key)?;
             tracing::debug!(qe_tcb_status = %_qe_tcb_status, "QE Identity verified");
         } else {
-            tracing::warn!(
+            // F6 fix: QE Identity was explicitly requested (JSON provided) but
+            // the quote's signature data is too short to contain the QE Report.
+            // This indicates a malformed or stripped quote — fail closed.
+            return Err(TdxVerifyError::QeIdentityInvalid(format!(
                 "QE Identity verification requested but quote signature data too short \
-                 for QE Report ({sig_data_len} bytes < {}). Skipping QE identity check.",
+                 for QE Report ({sig_data_len} bytes < {})",
                 QE_REPORT_OFFSET + QE_REPORT_SIZE
-            );
+            )));
         }
     }
 
     // Step 3: TCB Info verification and level matching.
-    let tcb_status =
-        if collateral.tcb_info_json.is_some() {
-            let (status, tcb_info) = verify_tcb_info(
-                collateral,
-                &body.tee_tcb_svn,
-                header_pce_svn,
-                &tcb_signing_key,
-            )?;
+    // F2 fix: fail-closed when TCB Info is missing (this function is only
+    // called when collateral verification is active, so we must not silently
+    // assume UpToDate without evidence).
+    let tcb_info_json =
+        collateral
+            .tcb_info_json
+            .as_ref()
+            .ok_or_else(|| TdxVerifyError::CollateralIncomplete {
+                missing: "tcb_info_json (required for TCB level matching)".into(),
+            })?;
+    // Presence confirmed — now verify.
+    let _ = tcb_info_json; // used below via collateral ref
 
-            // Step 4: FMSPC cross-validation.
-            // Extract FMSPC from PCK cert and compare with TCBInfo.
-            if !collateral.pck_chain_der.is_empty() {
-                let leaf_cert = openssl::x509::X509::from_der(&collateral.pck_chain_der[0])
-                    .map_err(|e| TdxVerifyError::FmspcMismatch {
-                        quote_fmspc: "N/A".into(),
-                        collateral_fmspc: format!("failed to parse PCK cert for FMSPC: {e}"),
-                    })?;
-                match extract_fmspc_from_pck_cert(&leaf_cert) {
-                    Ok(pck_fmspc) => {
-                        verify_fmspc(&pck_fmspc, &tcb_info)?;
-                        tracing::debug!(
-                            fmspc = hex::encode(pck_fmspc),
-                            "FMSPC cross-validation passed"
-                        );
-                    }
-                    Err(_) => {
-                        // FMSPC extraction failed — this is expected for test certs
-                        // that don't have SGX extensions. In production, PCK certs
-                        // always have this extension.
-                        tracing::warn!(
-                            "Could not extract FMSPC from PCK cert; \
-                         skipping FMSPC cross-validation. \
-                         This is expected for test/synthetic certificates."
-                        );
-                    }
+    // Build the PCK TCB values for two-phase matching.
+    // If real PCK TCB values are available (from cert SGX extensions), use them.
+    // Otherwise fall back to TEE_TCB_SVN for SGX components too (synthetic certs).
+    let effective_pck_tcb = pck_tcb.unwrap_or_else(|| {
+        tracing::warn!(
+            "Using TEE_TCB_SVN as fallback for SGX TCB components \
+             (PCK cert has no SGX extensions). This is only safe for synthetic/test certs."
+        );
+        PckTcbValues {
+            sgx_comp_svns: {
+                let mut svns = [0u16; PCK_SGX_TCB_COMP_COUNT];
+                for (i, svn) in svns.iter_mut().enumerate() {
+                    *svn = body.tee_tcb_svn[i] as u16;
                 }
+                svns
+            },
+            pcesvn: header_pce_svn, // fallback to quote header PCESVN
+        }
+    });
+
+    let (status, tcb_info) = verify_tcb_info(
+        collateral,
+        &body.tee_tcb_svn,
+        &effective_pck_tcb,
+        &tcb_signing_key,
+    )?;
+
+    // Step 4: FMSPC cross-validation.
+    // Extract FMSPC from PCK cert and compare with TCBInfo.
+    if !collateral.pck_chain_der.is_empty() {
+        let leaf_cert =
+            openssl::x509::X509::from_der(&collateral.pck_chain_der[0]).map_err(|e| {
+                TdxVerifyError::FmspcMismatch {
+                    quote_fmspc: "N/A".into(),
+                    collateral_fmspc: format!("failed to parse PCK cert for FMSPC: {e}"),
+                }
+            })?;
+        match extract_fmspc_from_pck_cert(&leaf_cert) {
+            Ok(pck_fmspc) => {
+                verify_fmspc(&pck_fmspc, &tcb_info)?;
+                tracing::debug!(
+                    fmspc = hex::encode(pck_fmspc),
+                    "FMSPC cross-validation passed"
+                );
             }
+            Err(e) => {
+                // F7 fix: Apply the same SGX Extensions OID presence check
+                // as F1. If the cert has Intel SGX Extensions but FMSPC
+                // extraction failed, that's a real error. If no SGX Extensions,
+                // it's a synthetic/test cert and skipping is acceptable.
+                let cert_der = leaf_cert.to_der().unwrap_or_default();
+                let sgx_ext_root_oid: &[u8] = &[
+                    0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x01, 0x0D, 0x01,
+                ];
+                if find_subsequence(&cert_der, sgx_ext_root_oid).is_some() {
+                    return Err(e);
+                }
+                tracing::warn!(
+                    "PCK cert has no SGX Extensions (synthetic/test cert); \
+                     skipping FMSPC cross-validation."
+                );
+            }
+        }
+    }
 
-            tracing::debug!(tcb_status = %status, "TCB Info verified");
-            status
-        } else {
-            tracing::warn!("No TCB Info provided; skipping TCB level matching");
-            TcbStatus::UpToDate // assume up-to-date if no TCB Info
-        };
-
-    Ok(tcb_status)
+    tracing::debug!(tcb_status = %status, "TCB Info verified");
+    Ok(status)
 }
 
 /// Build a synthetic TDX quote for testing (no real hardware needed).
@@ -3337,9 +3638,9 @@ mod tests {
     #[test]
     fn tdx_chain_positive_valid_cert_chain() {
         let (doc, collateral) = t3_valid_fixture();
+        // Chain-only test (no QE/TCB). Use opportunistic collateral path.
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3380,8 +3681,8 @@ mod tests {
         assert!(verifier.verify_tdx(&doc).is_ok());
     }
 
-    /// TDX-CHAIN-001b: Partial DCAP bundle — tcb_info present but qe_identity missing →
-    /// CollateralIncomplete error. (Having both missing is fine: PCK-only verification.)
+    /// TDX-CHAIN-001b: DCAP bundle with tcb_info present but qe_identity missing →
+    /// CollateralIncomplete error.
     #[test]
     fn tdx_chain_001b_collateral_incomplete_fails() {
         let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
@@ -3413,6 +3714,34 @@ mod tests {
             format!("{err}").contains("qe_identity_json"),
             "error should name the missing field"
         );
+    }
+
+    /// F2: Both QE Identity and TCB Info missing with require_collateral=true →
+    /// CollateralIncomplete (not silent PCK-only pass).
+    #[test]
+    fn f2_both_qe_and_tcb_missing_fails_closed() {
+        let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
+        let leaf_ec = gen_ec_key();
+        let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec).unwrap();
+        let (pck_der, _pck_cert) =
+            build_test_leaf("Test PCK Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+        let collateral = TdxCollateral {
+            root_ca_der: root_der,
+            pck_chain_der: vec![pck_der],
+            crl_der: None,
+            qe_identity_json: None,
+            tcb_info_json: None,
+            tcb_signing_chain_der: None,
+        };
+        let policy = TdxVerifyPolicy {
+            require_collateral: true,
+            collateral: Some(collateral),
+            ..Default::default()
+        };
+        let (_, doc) = valid_fixture();
+        let verifier = TdxVerifier::with_policy(policy);
+        let err = verifier.verify_tdx(&doc).unwrap_err();
+        assert_eq!(err.code(), "TDX_COLLATERAL_INCOMPLETE");
     }
 
     /// TDX-CHAIN-001b: Collateral with only QE Identity but no TCB Info → incomplete.
@@ -3469,7 +3798,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3505,7 +3833,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3530,7 +3857,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3552,7 +3878,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3597,7 +3922,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3640,7 +3964,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3674,7 +3997,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -3711,7 +4033,6 @@ mod tests {
         };
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
@@ -4786,7 +5107,13 @@ mod tests {
         ))
         .unwrap();
 
-        let status = match_tcb_level(&tcb_info, &[5; 16], 10).unwrap();
+        // PCK cert SGX SVNs = 5 for all components, PCESVN = 10.
+        let pck = PckTcbValues {
+            sgx_comp_svns: [5; PCK_SGX_TCB_COMP_COUNT],
+            pcesvn: 10,
+        };
+        // TDX TEE_TCB_SVN = 5 for all components.
+        let status = match_tcb_level(&tcb_info, &pck, &[5; 16]).unwrap();
         assert_eq!(status, TcbStatus::UpToDate);
     }
 
@@ -4828,8 +5155,13 @@ mod tests {
         ))
         .unwrap();
 
-        // Quote has SVN=10 (higher than required 3) and PCESVN=10 (higher than required 5).
-        let status = match_tcb_level(&tcb_info, &[10; 16], 10).unwrap();
+        // PCK cert SGX SVNs = 10, PCESVN = 10 (both higher than required 3 and 5).
+        let pck = PckTcbValues {
+            sgx_comp_svns: [10; PCK_SGX_TCB_COMP_COUNT],
+            pcesvn: 10,
+        };
+        // TDX TEE_TCB_SVN = 10.
+        let status = match_tcb_level(&tcb_info, &pck, &[10; 16]).unwrap();
         assert_eq!(status, TcbStatus::UpToDate);
     }
 
@@ -4891,10 +5223,428 @@ mod tests {
         ))
         .unwrap();
 
-        // Quote has component SVN=5 (matches both levels) but PCESVN=7 (< 10, >= 5).
+        // PCK cert SGX SVNs = 5 (matches both levels) but PCESVN=7 (< 10, >= 5).
         // Should match the second level (OutOfDate).
-        let status = match_tcb_level(&tcb_info, &[5; 16], 7).unwrap();
+        let pck = PckTcbValues {
+            sgx_comp_svns: [5; PCK_SGX_TCB_COMP_COUNT],
+            pcesvn: 7,
+        };
+        // TDX TEE_TCB_SVN = 5.
+        let status = match_tcb_level(&tcb_info, &pck, &[5; 16]).unwrap();
         assert_eq!(status, TcbStatus::OutOfDate);
+    }
+
+    /// F1 test: Two-phase matching with divergent PCK SGX SVNs vs TEE_TCB_SVN.
+    ///
+    /// PCK cert SGX SVNs are high (match level 1), but TEE_TCB_SVN is low
+    /// (only matches level 2). Should select level 2.
+    #[test]
+    fn tcb_level_matching_two_phase_divergent() {
+        let tcb_info: TcbInfo = serde_json::from_str(&format!(
+            r#"{{
+                "version": 3,
+                "issueDate": "2026-01-01T00:00:00Z",
+                "nextUpdate": "2027-01-01T00:00:00Z",
+                "fmspc": "000000000000",
+                "pceId": "0000",
+                "tcbType": 1,
+                "tcbEvaluationDataNumber": 1,
+                "tcbLevels": [
+                    {{
+                        "tcb": {{
+                            "sgxtcbcomponents": {sgx_high},
+                            "tdxtcbcomponents": {tdx_high},
+                            "pcesvn": 10
+                        }},
+                        "tcbStatus": "UpToDate"
+                    }},
+                    {{
+                        "tcb": {{
+                            "sgxtcbcomponents": {sgx_low},
+                            "tdxtcbcomponents": {tdx_low},
+                            "pcesvn": 5
+                        }},
+                        "tcbStatus": "OutOfDate"
+                    }}
+                ]
+            }}"#,
+            sgx_high = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 10}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            tdx_high = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 10}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            sgx_low = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 3}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            tdx_low = serde_json::to_string(
+                &(0..16)
+                    .map(|_| serde_json::json!({"svn": 3}))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+        ))
+        .unwrap();
+
+        // PCK cert has HIGH SGX SVNs (would match level 1 for SGX phase).
+        let pck = PckTcbValues {
+            sgx_comp_svns: [15; PCK_SGX_TCB_COMP_COUNT],
+            pcesvn: 15,
+        };
+        // But TEE_TCB_SVN is LOW (only matches level 2 for TDX phase).
+        // Phase 1 passes for level 1 (SGX), but phase 2 fails (TDX).
+        // So it falls through to level 2 where both phases pass.
+        let status = match_tcb_level(&tcb_info, &pck, &[5; 16]).unwrap();
+        assert_eq!(
+            status,
+            TcbStatus::OutOfDate,
+            "two-phase matching should select level 2 when TDX SVNs are too low for level 1"
+        );
+
+        // Conversely: LOW SGX SVNs but HIGH TEE_TCB_SVN.
+        let pck_low = PckTcbValues {
+            sgx_comp_svns: [5; PCK_SGX_TCB_COMP_COUNT],
+            pcesvn: 15,
+        };
+        let status = match_tcb_level(&tcb_info, &pck_low, &[15; 16]).unwrap();
+        assert_eq!(
+            status,
+            TcbStatus::OutOfDate,
+            "two-phase matching should select level 2 when SGX SVNs are too low for level 1"
+        );
+    }
+
+    /// F1 test: Real PCK leaf cert fixture — verify SGX TCB SVN + PCESVN extraction.
+    #[test]
+    fn pck_tcb_extraction_real_cert() {
+        // Real Intel-signed TDX PCK certificate vendored from intel-dcap-ref sample data.
+        let pem_bytes = include_bytes!("../../tests/fixtures/intel_tdx_pck_cert.pem");
+        let cert =
+            openssl::x509::X509::from_pem(pem_bytes).expect("failed to parse real TDX PCK cert");
+
+        let pck_tcb =
+            extract_pck_tcb_values(&cert).expect("failed to extract PCK TCB values from real cert");
+
+        // Verify COMP01 = 0x52 = 82 (from DER analysis of the cert).
+        assert_eq!(
+            pck_tcb.sgx_comp_svns[0], 82,
+            "SGX_TCB_COMP01_SVN should be 82 (0x52)"
+        );
+        // Verify COMP08 = 0x0A = 10.
+        assert_eq!(
+            pck_tcb.sgx_comp_svns[7], 10,
+            "SGX_TCB_COMP08_SVN should be 10 (0x0A)"
+        );
+        // Verify PCESVN = 0x2961 = 10593.
+        assert_eq!(pck_tcb.pcesvn, 10593, "PCESVN should be 10593 (0x2961)");
+
+        // All 16 components should be non-trivially populated.
+        let nonzero_count = pck_tcb.sgx_comp_svns.iter().filter(|&&v| v > 0).count();
+        assert!(
+            nonzero_count >= 10,
+            "expected most SGX TCB components to be non-zero, got {nonzero_count}"
+        );
+    }
+
+    /// F2 test: Missing TCB Info with require_collateral=true → CollateralIncomplete.
+    #[test]
+    fn f2_missing_tcb_info_fails_closed() {
+        let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
+        let leaf_ec = gen_ec_key();
+        let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec.clone()).unwrap();
+        let (leaf_der, _) =
+            build_test_leaf("Test PCK Cert", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+
+        let tcb_ec = gen_ec_key();
+        let tcb_key = openssl::pkey::PKey::from_ec_key(tcb_ec).unwrap();
+        let (tcb_leaf_der, _) =
+            build_test_leaf("Test TCB Signing", &ca_key, &ca_cert, &tcb_key, 3, 0, 365);
+
+        let quote = build_synthetic_tdx_quote_full(
+            [0u8; 64],
+            [0xAA; 48],
+            [[0u8; 48]; 4],
+            TEST_TEE_TCB_SVN,
+            TEST_PCE_SVN,
+            &leaf_ec,
+            TEST_QE_MRSIGNER,
+            TEST_QE_ISVPRODID,
+            TEST_QE_ISVSVN,
+            TEST_QE_MISCSELECT,
+            TEST_QE_ATTRIBUTES,
+        );
+        let doc = AttestationDocument::new(encode_tdx_document(&quote));
+
+        // Provide QE Identity but NO TCB Info — this should now fail.
+        let qe_identity_json = build_test_qe_identity_json(
+            &TEST_QE_MRSIGNER,
+            TEST_QE_ISVPRODID,
+            TEST_QE_ISVSVN,
+            &TEST_QE_MISCSELECT,
+            &[0xFF; 4],
+            &TEST_QE_ATTRIBUTES,
+            &[0xFF; 16],
+            &tcb_key,
+        );
+
+        let collateral = TdxCollateral {
+            root_ca_der: root_der,
+            pck_chain_der: vec![leaf_der],
+            crl_der: None,
+            qe_identity_json: Some(qe_identity_json),
+            tcb_info_json: None, // Deliberately missing!
+            tcb_signing_chain_der: Some(vec![tcb_leaf_der]),
+        };
+
+        let policy = TdxVerifyPolicy {
+            collateral: Some(collateral),
+            require_collateral: true,
+            ..Default::default()
+        };
+        let verifier = TdxVerifier::with_policy(policy);
+        let err = verifier.verify_tdx(&doc).unwrap_err();
+        // F2: should fail with CollateralIncomplete, not silently return UpToDate.
+        assert_eq!(err.code(), "TDX_COLLATERAL_INCOMPLETE");
+    }
+
+    /// Build a synthetic TDX quote with a custom td_attributes value, properly signed.
+    fn build_synthetic_quote_with_td_attributes(td_attributes: u64) -> Vec<u8> {
+        // Build the quote manually so we can set td_attributes before signing.
+        let mut quote = Vec::with_capacity(1024);
+
+        // Header (48 bytes)
+        quote.extend_from_slice(&4u16.to_le_bytes()); // version
+        quote.extend_from_slice(&ATT_KEY_TYPE_P256.to_le_bytes());
+        quote.extend_from_slice(&TEE_TYPE_TDX.to_le_bytes());
+        quote.extend_from_slice(&0u16.to_le_bytes()); // qe_svn
+        quote.extend_from_slice(&0u16.to_le_bytes()); // pce_svn
+        quote.extend_from_slice(&[0u8; 16]); // qe_vendor_id
+        quote.extend_from_slice(&[0u8; 20]); // user_data
+        assert_eq!(quote.len(), HEADER_SIZE);
+
+        // Body (584 bytes)
+        quote.extend_from_slice(&[0u8; 16]); // tee_tcb_svn
+        quote.extend_from_slice(&[0u8; 48]); // mrseam
+        quote.extend_from_slice(&[0u8; 48]); // mrsignerseam
+        quote.extend_from_slice(&[0u8; 8]); // seam_attributes
+        quote.extend_from_slice(&td_attributes.to_le_bytes()); // td_attributes
+        quote.extend_from_slice(&[0u8; 8]); // xfam
+        quote.extend_from_slice(&[0xAA; 48]); // mrtd
+        quote.extend_from_slice(&[0u8; 48]); // mrconfigid
+        quote.extend_from_slice(&[0u8; 48]); // mrowner
+        quote.extend_from_slice(&[0u8; 48]); // mrownerconfig
+        quote.extend_from_slice(&[0u8; 48]); // rtmr0
+        quote.extend_from_slice(&[0u8; 48]); // rtmr1
+        quote.extend_from_slice(&[0u8; 48]); // rtmr2
+        quote.extend_from_slice(&[0u8; 48]); // rtmr3
+        quote.extend_from_slice(&[0u8; 64]); // reportdata
+        assert_eq!(quote.len() - HEADER_SIZE, BODY_SIZE_V4);
+
+        let signed_len = quote.len();
+
+        // Sign with ephemeral key.
+        let group =
+            openssl::ec::EcGroup::from_curve_name(openssl::nid::Nid::X9_62_PRIME256V1).unwrap();
+        let ec_key = openssl::ec::EcKey::generate(&group).unwrap();
+        let _pkey = openssl::pkey::PKey::from_ec_key(ec_key.clone()).unwrap();
+        let sig =
+            openssl::ecdsa::EcdsaSig::sign(&Sha256::digest(&quote[..signed_len]), &ec_key).unwrap();
+        let r = sig.r().to_vec_padded(32).unwrap();
+        let s = sig.s().to_vec_padded(32).unwrap();
+
+        let mut pubkey_xy = [0u8; 64];
+        let mut bn_ctx = openssl::bn::BigNumContext::new().unwrap();
+        let pubkey_bytes = ec_key
+            .public_key()
+            .to_bytes(
+                &group,
+                openssl::ec::PointConversionForm::UNCOMPRESSED,
+                &mut bn_ctx,
+            )
+            .unwrap();
+        pubkey_xy.copy_from_slice(&pubkey_bytes[1..65]);
+
+        let sig_data_len = (ECDSA_SIG_SIZE + ECDSA_PUBKEY_SIZE) as u32;
+        quote.extend_from_slice(&sig_data_len.to_le_bytes());
+        quote.extend_from_slice(&r);
+        quote.extend_from_slice(&s);
+        quote.extend_from_slice(&pubkey_xy);
+
+        quote
+    }
+
+    /// F4 test: Debug-mode TD (TD_ATTRIBUTES bit 0 = 1) is rejected by default.
+    #[test]
+    fn f4_debug_td_rejected() {
+        let quote = build_synthetic_quote_with_td_attributes(0x01); // DEBUG bit set
+        let doc = AttestationDocument::new(encode_tdx_document(&quote));
+        let verifier = TdxVerifier::new(None);
+        let err = verifier.verify_tdx(&doc).unwrap_err();
+        assert_eq!(err.code(), "TDX_DEBUG_TD_REJECTED");
+        assert_eq!(err.layer(), "T4_POLICY");
+    }
+
+    /// F4 test: Debug-mode TD accepted when reject_debug_td = false.
+    #[test]
+    fn f4_debug_td_accepted_when_policy_allows() {
+        let quote = build_synthetic_quote_with_td_attributes(0x01); // DEBUG bit set
+        let doc = AttestationDocument::new(encode_tdx_document(&quote));
+        let policy = TdxVerifyPolicy {
+            reject_debug_td: false,
+            ..Default::default()
+        };
+        let verifier = TdxVerifier::with_policy(policy);
+        let result = verifier.verify_tdx(&doc);
+        assert!(
+            result.is_ok(),
+            "debug TD should be accepted when reject_debug_td=false: {:?}",
+            result.err()
+        );
+    }
+
+    /// F4 test: Non-debug TD (td_attributes = 0) passes with default policy.
+    #[test]
+    fn f4_non_debug_td_passes() {
+        let quote = build_synthetic_quote_with_td_attributes(0x00);
+        let doc = AttestationDocument::new(encode_tdx_document(&quote));
+        let verifier = TdxVerifier::new(None);
+        let result = verifier.verify_tdx(&doc);
+        assert!(
+            result.is_ok(),
+            "non-debug TD should pass: {:?}",
+            result.err()
+        );
+    }
+
+    /// F6 test: QE Identity provided but quote too short for QE Report → error.
+    #[test]
+    fn f6_qe_identity_short_sig_data_fails() {
+        // Build a DCAP fixture where the quote has a short signature section
+        // (no QE Report) but QE Identity JSON is provided.
+        let (root_der, ca_key, ca_cert) = build_test_ca("Test TDX Root CA");
+        let leaf_ec = gen_ec_key();
+        let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec.clone()).unwrap();
+        let (leaf_der, _) =
+            build_test_leaf("Test PCK Cert", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+
+        let tcb_ec = gen_ec_key();
+        let tcb_key = openssl::pkey::PKey::from_ec_key(tcb_ec).unwrap();
+        let (tcb_leaf_der, _) =
+            build_test_leaf("Test TCB Signing", &ca_key, &ca_cert, &tcb_key, 3, 0, 365);
+
+        // Build quote WITHOUT QE Report — use the PCK leaf key for signing
+        // so the chain validation passes, but use the basic builder that
+        // produces a short sig section (sig + pubkey only, no QE Report).
+        let quote =
+            build_synthetic_tdx_quote_with_key([0u8; 64], [0xAA; 48], [[0u8; 48]; 4], &leaf_ec);
+        let doc = AttestationDocument::new(encode_tdx_document(&quote));
+
+        let qe_identity_json = build_test_qe_identity_json(
+            &TEST_QE_MRSIGNER,
+            TEST_QE_ISVPRODID,
+            TEST_QE_ISVSVN,
+            &TEST_QE_MISCSELECT,
+            &[0xFF; 4],
+            &TEST_QE_ATTRIBUTES,
+            &[0xFF; 16],
+            &tcb_key,
+        );
+
+        let tcb_info_json = build_test_tcb_info_json(
+            &TEST_FMSPC,
+            &[5; 16],
+            &[5; 16],
+            TEST_PCE_SVN,
+            "UpToDate",
+            &tcb_key,
+        );
+
+        let collateral = TdxCollateral {
+            root_ca_der: root_der,
+            pck_chain_der: vec![leaf_der],
+            crl_der: None,
+            qe_identity_json: Some(qe_identity_json),
+            tcb_info_json: Some(tcb_info_json),
+            tcb_signing_chain_der: Some(vec![tcb_leaf_der]),
+        };
+
+        let policy = TdxVerifyPolicy {
+            collateral: Some(collateral),
+            require_collateral: true,
+            ..Default::default()
+        };
+        let verifier = TdxVerifier::with_policy(policy);
+        let err = verifier.verify_tdx(&doc).unwrap_err();
+        // F6: should fail with QeIdentityInvalid, not silently skip.
+        assert_eq!(err.code(), "TDX_QE_IDENTITY_INVALID");
+    }
+
+    /// F7 test: FMSPC extraction fails on cert with SGX Extensions → hard error.
+    ///
+    /// Uses the real Intel PCK cert (which has SGX Extensions + valid FMSPC),
+    /// then corrupts the FMSPC sub-OID so extraction fails. The F7 gating
+    /// logic should detect the SGX Extensions root OID is still present and
+    /// return a hard error instead of silently skipping.
+    #[test]
+    fn f7_fmspc_extraction_fails_with_sgx_extensions_present() {
+        let pem_bytes = include_bytes!("../../tests/fixtures/intel_tdx_pck_cert.pem");
+        let cert = openssl::x509::X509::from_pem(pem_bytes).unwrap();
+        let mut cert_der = cert.to_der().unwrap();
+
+        // Confirm the real cert has valid FMSPC first.
+        assert!(
+            extract_fmspc_from_pck_cert(&cert).is_ok(),
+            "real PCK cert should have valid FMSPC"
+        );
+
+        // Find the FMSPC OID (1.2.840.113741.1.13.1.4) in the raw DER.
+        let fmspc_oid: &[u8] = &[
+            0x06, 0x0A, 0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x01, 0x0D, 0x01, 0x04,
+        ];
+        let pos =
+            find_subsequence(&cert_der, fmspc_oid).expect("FMSPC OID must exist in real PCK cert");
+
+        // Corrupt the last byte of the FMSPC OID (.04 → .FF).
+        // This breaks FMSPC extraction but leaves the SGX Extensions root OID
+        // (1.2.840.113741.1.13.1) intact.
+        cert_der[pos + fmspc_oid.len() - 1] = 0xFF;
+
+        // Confirm FMSPC extraction now fails on the corrupted DER.
+        assert!(
+            parse_fmspc_from_sgx_extensions(&cert_der).is_err(),
+            "FMSPC extraction should fail on corrupted OID"
+        );
+
+        // Confirm the SGX Extensions root OID is still present.
+        let sgx_ext_root_oid: &[u8] = &[
+            0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x01, 0x0D, 0x01,
+        ];
+        assert!(
+            find_subsequence(&cert_der, sgx_ext_root_oid).is_some(),
+            "SGX Extensions root OID should still be present after FMSPC corruption"
+        );
+
+        // Therefore: F7 gating would detect SGX Extensions are present
+        // and return a hard error, not silently skip.
+        //
+        // Also verify contrast: a synthetic cert has NO SGX Extensions OID.
+        let (_, ca_key, ca_cert) = build_test_ca("Test CA");
+        let leaf_ec = gen_ec_key();
+        let leaf_key = openssl::pkey::PKey::from_ec_key(leaf_ec).unwrap();
+        let (leaf_der, _) = build_test_leaf("Test Leaf", &ca_key, &ca_cert, &leaf_key, 2, 0, 365);
+        assert!(
+            find_subsequence(&leaf_der, sgx_ext_root_oid).is_none(),
+            "synthetic cert must NOT have SGX Extensions OID (fallback path)"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -5013,7 +5763,6 @@ mod tests {
 
         let policy = TdxVerifyPolicy {
             collateral: Some(collateral),
-            require_collateral: true,
             ..Default::default()
         };
         let verifier = TdxVerifier::with_policy(policy);
