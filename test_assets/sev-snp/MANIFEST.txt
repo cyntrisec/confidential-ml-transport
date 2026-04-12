@@ -1,0 +1,17 @@
+# SEV-SNP fixture manifest
+# Generated: 2026-04-12T18:54:28Z
+# Source: https://kdsintf.amd.com/vcek/v1
+# Safe to commit: YES (AMD public KDS data, no chip-specific identifiers)
+
+96bff94e97e2b7ddf4bf3b9b7f780f94a46b8c51f52abfdcc283be7df36ce405  ./Genoa/ark.pem
+22fea250e0390b22008c9a415f4bd915ae8cef4a240f9d21702e84eb250b9186  ./Genoa/ask.pem
+e6ecc853fa56d3170a624d40851f98a1036f974b50204ea69e6aec91d777aca3  ./Genoa/cert_chain.pem
+886a378d3e28d65c88960a8acb9874dbf212c70a94a58ea84a0abb65f46e5999  ./Genoa/crl.der
+8c109952166431ffad8cb9a3d54f3d20ffbbb58164f0d54be3457bf0ece9e0d8  ./Milan/ark.pem
+8da3a65af1cb7cb90a21fac78431a2431a9ee7811f48c36569c53fb80ad31fee  ./Milan/ask.pem
+22e62f8d2c21a156470145fc75f7b5a377cb053ced3e97f0bd3f8d8ca5941ce6  ./Milan/cert_chain.pem
+53a61dc059e525ef637c4f28b7ab2542f64ef1ad0a485eca425bafe722e15f58  ./Milan/crl.der
+ae871683540ecad76a803fc0e59d5a00bed483b9ed7792d6af3d7ed9a26e6431  ./Turin/ark.pem
+deb6e692c6b906301dc8a5e7a5ff109655c22fd1514a4c4b7cfb7e4e01fc72c3  ./Turin/ask.pem
+cc9a52fbed3fbc6e4a0a50149a541a75938f975658909c2a6084767829b36e85  ./Turin/cert_chain.pem
+0693615c248a46d56b32ade06136ef19bcc35f541a0c461724bb677fb29958bc  ./Turin/crl.der

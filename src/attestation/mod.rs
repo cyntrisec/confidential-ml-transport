@@ -15,6 +15,15 @@ pub mod tdx;
 #[cfg(feature = "azure-sev-snp")]
 pub mod azure_sev;
 
+#[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
+pub mod sev_errors;
+
+#[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
+pub mod sev_policy;
+
+#[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
+pub mod vcek_extensions;
+
 use async_trait::async_trait;
 
 use crate::error::AttestError;

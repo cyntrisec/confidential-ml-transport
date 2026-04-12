@@ -12,4 +12,12 @@ benchmark_results/*.md
 .env.*
 *.pem
 !tests/fixtures/*.pem
+!test_assets/sev-snp/**/*.pem
 *.key
+
+# Test fixtures policy:
+# - test_assets/sev-snp/**/*.pem and *.der are AMD PUBLIC KDS data (ARK, ASK, CRL).
+#   Safe to commit. Managed by scripts/fetch-snp-fixtures.sh.
+#   DO NOT commit anything chip-specific (VCEK, attestation reports, chip_id,
+#   handshake transcripts). See test_assets/sev-snp/README.md for policy.
+

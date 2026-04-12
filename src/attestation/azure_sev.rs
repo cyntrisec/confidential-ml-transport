@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
+use super::sev_errors::check_report_invariants;
+use super::sev_policy::{enforce_report_policy, SnpVerifyPolicy};
 use super::types::{AttestationDocument, VerifiedAttestation};
 use super::{AttestationProvider, AttestationVerifier};
 use crate::error::AttestError;
@@ -115,18 +117,38 @@ impl AttestationProvider for AzureSevSnpProvider {
 /// 5. Validating the certificate chain (ARK → ASK → VCEK) and report signature
 /// 6. Optionally checking the MEASUREMENT against an expected value
 pub struct AzureSevSnpVerifier {
-    expected_measurement: Option<Vec<u8>>,
+    policy: SnpVerifyPolicy,
 }
 
 impl AzureSevSnpVerifier {
-    /// Create a new verifier.
+    /// Create a new verifier with production-default policy, optionally
+    /// pinning a specific `MEASUREMENT`.
     ///
-    /// If `expected_measurement` is `Some`, the verifier will check that the
-    /// report's `MEASUREMENT` field (48 bytes) matches the expected value.
+    /// Equivalent to:
+    /// ```ignore
+    /// AzureSevSnpVerifier::with_policy(SnpVerifyPolicy {
+    ///     expected_measurement,
+    ///     ..SnpVerifyPolicy::production()
+    /// })
+    /// ```
     pub fn new(expected_measurement: Option<Vec<u8>>) -> Self {
-        Self {
+        Self::with_policy(SnpVerifyPolicy {
             expected_measurement,
-        }
+            ..SnpVerifyPolicy::production()
+        })
+    }
+
+    /// Create a verifier with a fully-specified policy.
+    ///
+    /// Prefer this over [`Self::new`] when pinning products, loosening checks
+    /// for development, or providing a CRL.
+    pub fn with_policy(policy: SnpVerifyPolicy) -> Self {
+        Self { policy }
+    }
+
+    /// Borrow the active policy (read-only).
+    pub fn policy(&self) -> &SnpVerifyPolicy {
+        &self.policy
     }
 }
 
@@ -163,6 +185,12 @@ impl AttestationVerifier for AzureSevSnpVerifier {
         // Step 4: Parse the SNP report.
         let report = parse_attestation_report(report_bytes)?;
 
+        // Step 4a: Structural invariants (Phase 1 hardening — F9/F10/F11).
+        // Rejects older report versions, unsupported signature algorithms,
+        // and unsigned reports (MaskChipKey=1) with clear, specific errors
+        // before we waste cycles on binding/chain validation.
+        check_report_invariants(&report, self.policy.min_report_version)?;
+
         // Step 5: Verify REPORT_DATA binding.
         // On Azure, REPORT_DATA[0..32] = SHA256(VarData).
         let var_data = hcl_report.var_data();
@@ -187,13 +215,45 @@ impl AttestationVerifier for AzureSevSnpVerifier {
                     .into(),
             ));
         }
-        verify_report_with_certs(&report, report_bytes, &cert_chain_bytes)?;
+        let vcek_ext = verify_report_with_certs(&report, report_bytes, &cert_chain_bytes)?;
+
+        // Step 7a (Phase 5 — F1): bind VCEK-embedded TCB/chipID to the report.
+        // Required by AMD SB-3019 / CVE-2024-56161 (BadRAM) remediation.
+        if self.policy.check_tcb_binding {
+            super::vcek_extensions::enforce_tcb_binding(&report, &vcek_ext)
+                .map_err(AttestError::from)?;
+        }
+
+        // Step 7a-bis (Phase 6 — F5): CRL-based revocation check.
+        // Caller must provide CRL DER via policy.crl_der (fetched by the
+        // application from kdsintf.amd.com/vcek/v1/{product}/crl and refreshed
+        // on whatever cadence the application wants — not fetched here).
+        if let Some(crl_der) = self.policy.crl_der.as_deref() {
+            // We need the VCEK and ARK DER — classify the chain again.
+            // Azure's IMDS response has already been split at Step 4a (classify_certs_by_cn);
+            // we re-classify here for clarity (one-shot handshake code path,
+            // correctness over cycle count).
+            let (_hcl_bytes2, cert_chain_bytes2) = decode_azure_snp_document(&doc.raw)?;
+            let cert_str2 = std::str::from_utf8(&cert_chain_bytes2).map_err(|e| {
+                AttestError::VerificationFailed(format!("cert chain not UTF-8: {e}"))
+            })?;
+            let pem_certs2 = parse_pem_certificates(cert_str2)?;
+            let classified2 =
+                super::sev_errors::classify_certs_by_cn(&pem_certs2).map_err(AttestError::from)?;
+            super::sev_errors::enforce_crl_revocation(&classified2.vek, crl_der, &classified2.ark)
+                .map_err(AttestError::from)?;
+        }
+
+        // Step 7b: Enforce policy (Phase 4 — F2/F3/F8). Only after signature
+        // verification — we must not trust any field in the report until the
+        // chip-signed chain validates.
+        enforce_report_policy(&report, &self.policy)?;
 
         // Step 8: Check measurement if expected.
         let mut measurements = BTreeMap::new();
         measurements.insert(0, report.measurement.to_vec());
 
-        if let Some(ref expected) = self.expected_measurement {
+        if let Some(ref expected) = self.policy.expected_measurement {
             if expected.as_slice() != report.measurement.as_slice() {
                 return Err(AttestError::VerificationFailed(format!(
                     "MEASUREMENT mismatch: expected {}, got {}",
@@ -367,11 +427,13 @@ fn parse_attestation_report(
 ///
 /// The certificate chain from Azure IMDS is PEM-encoded. We parse the PEM
 /// to extract DER certificates, then verify: ARK → ASK → VCEK → report.
+///
+/// Returns the parsed VCEK TCB extensions for the F1 binding check.
 fn verify_report_with_certs(
     report: &sev::firmware::guest::AttestationReport,
     _report_bytes: &[u8],
     cert_chain_pem: &[u8],
-) -> Result<(), AttestError> {
+) -> Result<super::vcek_extensions::VcekTcbExtensions, AttestError> {
     // Parse PEM certificates from the IMDS response.
     // The IMDS THIM response contains:
     // - vcekCert: VCEK certificate (PEM)
@@ -391,16 +453,29 @@ fn verify_report_with_certs(
         )));
     }
 
-    // Build chain. The IMDS order is typically: VCEK, ASK, ARK.
-    // sev::certs::snp::Chain expects: ARK, ASK, VCEK.
-    let chain = sev::certs::snp::Chain::from_der(
-        &pem_certs[2], // ARK
-        &pem_certs[1], // ASK
-        &pem_certs[0], // VCEK
-    )
-    .map_err(|e| {
-        AttestError::VerificationFailed(format!("failed to build certificate chain: {e}"))
-    })?;
+    // Phase 2 (F7): classify certs by Subject CN instead of trusting positional
+    // order from the Azure IMDS THIM response. Resilient to future-compatible
+    // schema changes and robust against accidental reordering.
+    let classified =
+        super::sev_errors::classify_certs_by_cn(&pem_certs).map_err(AttestError::from)?;
+
+    // Phase 2 (F4): validate cert validity windows BEFORE signature verification.
+    super::sev_errors::check_cert_chain_validity(
+        &classified.ark,
+        &classified.ask,
+        &classified.vek,
+    )?;
+
+    // Phase 5 (F1): parse VCEK TCB extensions. Enforcement gated by
+    // policy.check_tcb_binding in verify().
+    let vcek_extensions = super::vcek_extensions::parse_vcek_extensions(&classified.vek)
+        .map_err(AttestError::from)?;
+
+    // Build chain with correctly-classified DER bytes.
+    let chain = sev::certs::snp::Chain::from_der(&classified.ark, &classified.ask, &classified.vek)
+        .map_err(|e| {
+            AttestError::VerificationFailed(format!("failed to build certificate chain: {e}"))
+        })?;
 
     // Verify the certificate chain and report signature.
     use sev::certs::snp::Verifiable;
@@ -411,9 +486,9 @@ fn verify_report_with_certs(
     // Verify the ARK is a known AMD root (Milan, Genoa, or Turin).
     // Without this check, an attacker could forge the entire chain with
     // a self-signed ARK of their own creation.
-    verify_ark_is_known_amd_root(&pem_certs[2])?;
+    verify_ark_is_known_amd_root(&classified.ark)?;
 
-    Ok(())
+    Ok(vcek_extensions)
 }
 
 /// Verify that the ARK certificate matches a known AMD root.
@@ -640,6 +715,30 @@ mod tests {
         assert!(result.is_err());
         let err = format!("{}", result.unwrap_err());
         assert!(err.contains("too short"), "error: {err}");
+    }
+
+    // -- Phase 3 verifier-API tests --
+
+    #[test]
+    fn new_with_none_measurement_uses_production_policy() {
+        let v = AzureSevSnpVerifier::new(None);
+        let policy = v.policy();
+        assert!(policy.expected_measurement.is_none());
+        assert!(policy.reject_debug);
+        assert_eq!(policy.require_vmpl, Some(0));
+    }
+
+    #[test]
+    fn with_policy_preserves_expected_measurement() {
+        let m = vec![0xBEu8; 48];
+        let v = AzureSevSnpVerifier::with_policy(SnpVerifyPolicy {
+            expected_measurement: Some(m.clone()),
+            ..SnpVerifyPolicy::production()
+        });
+        assert_eq!(
+            v.policy().expected_measurement.as_deref(),
+            Some(m.as_slice())
+        );
     }
 
     #[cfg(target_os = "linux")]

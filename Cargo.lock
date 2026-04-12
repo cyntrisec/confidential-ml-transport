@@ -578,6 +578,7 @@ dependencies = [
  "tracing",
  "tss-esapi",
  "x25519-dalek",
+ "x509-parser",
  "zeroize",
 ]
 

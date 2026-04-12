@@ -48,6 +48,7 @@ impl AttestationProvider for SyntheticSevSnpProvider {
 
         let report = sev::firmware::guest::AttestationReport {
             version: 2,
+            sig_algo: 1, // ECDSA P-384/SHA-384 per ABI 1.58 Chapter 10 Table 139
             chip_id: [0xD4; 64],
             report_data,
             measurement: self.measurement,
@@ -167,6 +168,7 @@ fn sev_snp_report_data_parsing() {
 
     let report = sev::firmware::guest::AttestationReport {
         version: 2,
+        sig_algo: 1,
         chip_id: [0xD4; 64],
         report_data,
         measurement,
@@ -186,6 +188,7 @@ fn sev_snp_wire_format_roundtrip() {
 
     let report = sev::firmware::guest::AttestationReport {
         version: 2,
+        sig_algo: 1,
         chip_id: [0xD4; 64],
         report_data: [0xAA; 64],
         measurement: [0xBB; 48],

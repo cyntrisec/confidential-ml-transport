@@ -36,6 +36,7 @@ openssl-sys = { version = "0.9", optional = true }
 aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
 serde_bytes = { version = "0.11", optional = true }
 sev = { version = "7", default-features = false, features = ["snp", "openssl"], optional = true }
+x509-parser = { version = "0.18", optional = true }
 az-cvm-vtpm = { version = "0.8", optional = true }
 tss-esapi = { version = "7", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
@@ -47,8 +48,8 @@ mock = []
 tcp = []
 vsock = ["dep:tokio-vsock"]
 nitro = ["dep:coset", "dep:ciborium", "dep:openssl", "dep:aws-nitro-enclaves-nsm-api", "dep:serde_bytes"]
-sev-snp = ["dep:sev", "dep:openssl"]
-azure-sev-snp = ["dep:az-cvm-vtpm", "dep:tss-esapi", "dep:sev", "dep:openssl", "dep:serde_json"]
+sev-snp = ["dep:sev", "dep:openssl", "dep:x509-parser"]
+azure-sev-snp = ["dep:az-cvm-vtpm", "dep:tss-esapi", "dep:sev", "dep:openssl", "dep:serde_json", "dep:x509-parser"]
 tdx = ["dep:openssl", "dep:openssl-sys", "dep:serde", "dep:serde_json"]
 
 [dev-dependencies]
@@ -91,3 +92,7 @@ harness = false
 [[example]]
 name = "echo_server"
 required-features = ["tcp", "mock"]
+
+[[example]]
+name = "azure-sev-snp-smoke"
+required-features = ["azure-sev-snp"]

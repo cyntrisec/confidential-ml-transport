@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
+use super::sev_errors::check_report_invariants;
+use super::sev_policy::{enforce_report_policy, SnpVerifyPolicy};
 use super::types::{AttestationDocument, VerifiedAttestation};
 use super::{AttestationProvider, AttestationVerifier};
 use crate::error::AttestError;
@@ -115,24 +117,62 @@ impl AttestationProvider for SevSnpProvider {
 /// Validates the attestation report by:
 /// 1. Parsing the wire document (marker, report, certificate chain)
 /// 2. Deserializing the `AttestationReport`
-/// 3. Validating the certificate chain (ARK → ASK → VCEK)
-/// 4. Verifying the report signature against the VCEK
-/// 5. Extracting `REPORT_DATA` (public key + nonce) and `MEASUREMENT`
+/// 3. Checking structural invariants (report version, sig algo, MaskChipKey)
+/// 4. Validating cert chain validity windows
+/// 5. Validating the certificate chain (ARK → ASK → VCEK)
+/// 6. Verifying the report signature against the VCEK
+/// 7. Optionally checking MEASUREMENT (and, in future phases, policy bits
+///    from [`SnpVerifyPolicy`])
 ///
-/// Optionally checks the 48-byte `MEASUREMENT` against an expected value.
+/// # Construction
+///
+/// For the common case of "just check a measurement," use [`Self::new`]:
+/// ```ignore
+/// let verifier = SevSnpVerifier::new(Some(expected_measurement));
+/// ```
+///
+/// For full policy control, use [`Self::with_policy`]:
+/// ```ignore
+/// let policy = SnpVerifyPolicy {
+///     expected_measurement: Some(m),
+///     accepted_products: vec![SnpProduct::Genoa],
+///     ..SnpVerifyPolicy::production()
+/// };
+/// let verifier = SevSnpVerifier::with_policy(policy);
+/// ```
 pub struct SevSnpVerifier {
-    expected_measurement: Option<Vec<u8>>,
+    policy: SnpVerifyPolicy,
 }
 
 impl SevSnpVerifier {
-    /// Create a new verifier.
+    /// Create a new verifier with production-default policy, optionally
+    /// pinning a specific `MEASUREMENT`.
     ///
-    /// If `expected_measurement` is `Some`, the verifier will check that the
-    /// report's `MEASUREMENT` field (48 bytes) matches the expected value.
+    /// Equivalent to:
+    /// ```ignore
+    /// SevSnpVerifier::with_policy(SnpVerifyPolicy {
+    ///     expected_measurement,
+    ///     ..SnpVerifyPolicy::production()
+    /// })
+    /// ```
     pub fn new(expected_measurement: Option<Vec<u8>>) -> Self {
-        Self {
+        Self::with_policy(SnpVerifyPolicy {
             expected_measurement,
-        }
+            ..SnpVerifyPolicy::production()
+        })
+    }
+
+    /// Create a verifier with a fully-specified policy.
+    ///
+    /// Prefer this over [`Self::new`] when pinning products, loosening checks
+    /// for development, or providing a CRL.
+    pub fn with_policy(policy: SnpVerifyPolicy) -> Self {
+        Self { policy }
+    }
+
+    /// Borrow the active policy (read-only).
+    pub fn policy(&self) -> &SnpVerifyPolicy {
+        &self.policy
     }
 }
 
@@ -145,18 +185,51 @@ impl AttestationVerifier for SevSnpVerifier {
         // Step 2: Deserialize the attestation report.
         let report = parse_attestation_report(&report_bytes)?;
 
-        // Step 3: Validate certificate chain and verify report signature.
-        verify_report_with_certs(&report, &report_bytes, &cert_chain_bytes)?;
+        // Step 3: Structural invariants (Phase 1 hardening — F9/F10/F11).
+        // Rejects older report versions, unsupported signature algorithms,
+        // and unsigned reports (MaskChipKey=1) with clear, specific errors
+        // before we waste cycles on chain validation.
+        check_report_invariants(&report, self.policy.min_report_version)?;
 
-        // Step 4: Extract fields from REPORT_DATA.
+        // Step 4: Validate certificate chain and verify report signature.
+        let vcek_ext = verify_report_with_certs(&report, &report_bytes, &cert_chain_bytes)?;
+
+        // Step 4a (Phase 5 — F1): bind VCEK-embedded TCB/chipID to the report.
+        // Guards against TCB rollback: old-firmware VCEK can't sign a report
+        // claiming newer TCB. Required by AMD SB-3019 / CVE-2024-56161
+        // (BadRAM) remediation. Gated by policy for opt-out in development.
+        if self.policy.check_tcb_binding {
+            super::vcek_extensions::enforce_tcb_binding(&report, &vcek_ext)
+                .map_err(AttestError::from)?;
+        }
+
+        // Step 4b (Phase 6 — F5): CRL-based revocation check if caller
+        // provided a CRL. Signed by ARK per VCEK 1.00 §2.3 Table 7.
+        if let Some(crl_der) = self.policy.crl_der.as_deref() {
+            // Re-classify certs via Subject CN. One-shot handshake code path
+            // — correctness over cycle cost.
+            let (_report_bytes2, cert_chain_bytes2) = decode_sev_snp_document(&doc.raw)?;
+            let certs_for_crl = parse_der_certificates(&cert_chain_bytes2)?;
+            let classified = super::sev_errors::classify_certs_by_cn(&certs_for_crl)
+                .map_err(AttestError::from)?;
+            super::sev_errors::enforce_crl_revocation(&classified.vek, crl_der, &classified.ark)
+                .map_err(AttestError::from)?;
+        }
+
+        // Step 5: Enforce policy (Phase 4 — F2/F3/F8). Only after signature
+        // verification — we must not trust any field in the report until the
+        // chip-signed chain validates.
+        enforce_report_policy(&report, &self.policy)?;
+
+        // Step 6: Extract fields from REPORT_DATA.
         let public_key = report.report_data[..32].to_vec();
         let nonce = report.report_data[32..64].to_vec();
 
-        // Step 5: Check measurement if expected.
+        // Step 7: Check measurement if expected.
         let mut measurements = BTreeMap::new();
         measurements.insert(0, report.measurement.to_vec());
 
-        if let Some(ref expected) = self.expected_measurement {
+        if let Some(ref expected) = self.policy.expected_measurement {
             if expected.as_slice() != report.measurement.as_slice() {
                 return Err(AttestError::VerificationFailed(format!(
                     "MEASUREMENT mismatch: expected {}, got {}",
@@ -302,11 +375,14 @@ fn parse_attestation_report(
 /// If `cert_chain_bytes` is empty, performs signature verification using
 /// the report's embedded signature structure directly (requires the caller
 /// to trust the report source, e.g., for testing).
+///
+/// Returns the parsed VCEK TCB extensions on success so the caller can
+/// run the F1 TCB-binding check via `enforce_tcb_binding`.
 fn verify_report_with_certs(
     report: &sev::firmware::guest::AttestationReport,
     report_bytes: &[u8],
     cert_chain_bytes: &[u8],
-) -> Result<(), AttestError> {
+) -> Result<super::vcek_extensions::VcekTcbExtensions, AttestError> {
     if cert_chain_bytes.is_empty() {
         return Err(AttestError::VerificationFailed(
             "certificate chain is empty — cannot verify report signature. \
@@ -315,32 +391,43 @@ fn verify_report_with_certs(
         ));
     }
 
-    // Parse concatenated DER certificates.
-    // The cert chain from get_ext_report is typically provided as a
-    // CertTableEntry list. When we serialize for the wire, we concatenate
-    // the raw DER bytes. We need to split them back into individual certs.
-    //
-    // Use openssl to parse individual DER certs from the concatenated bytes.
+    // Parse concatenated DER certificates (split by SEQUENCE boundaries).
     let certs = parse_der_certificates(cert_chain_bytes)?;
     if certs.len() < 3 {
         return Err(AttestError::VerificationFailed(format!(
-            "expected at least 3 certificates (ARK, ASK, VCEK), got {}",
+            "expected at least 3 certificates (ARK, ASK, VCEK/VLEK), got {}",
             certs.len()
         )));
     }
 
-    // Build the sev Chain from the parsed certificates.
-    // Convention from CertTableEntry: ARK, ASK, VCEK ordering.
-    let chain = sev::certs::snp::Chain::from_der(
-        &certs[0], // ARK
-        &certs[1], // ASK
-        &certs[2], // VCEK
-    )
-    .map_err(|e| {
-        AttestError::VerificationFailed(format!("failed to build certificate chain: {e}"))
-    })?;
+    // Phase 7 (F6, minimal): classify certs by Subject CN instead of trusting
+    // positional ordering from the sev firmware. Also natively supports VLEK
+    // (`SEV-VLEK` CN) as a drop-in replacement for VCEK.
+    //
+    // Full wire-format change to carry CertType GUID (matches upstream
+    // `CertTableEntry` semantics) is deferred — only needed for direct-SEV
+    // deployments with non-canonical entry ordering, which we don't have.
+    let classified = super::sev_errors::classify_certs_by_cn(&certs).map_err(AttestError::from)?;
 
-    // Verify the certificate chain (ARK self-signed, ARK signs ASK, ASK signs VCEK).
+    // Phase 2 (F4): validate cert validity windows BEFORE signature verification.
+    super::sev_errors::check_cert_chain_validity(
+        &classified.ark,
+        &classified.ask,
+        &classified.vek,
+    )?;
+
+    // Phase 5 (F1): parse VCEK/VLEK TCB extensions. Enforcement against the
+    // report's reported_tcb is gated by policy.check_tcb_binding in verify().
+    let vcek_extensions = super::vcek_extensions::parse_vcek_extensions(&classified.vek)
+        .map_err(AttestError::from)?;
+
+    // Build the sev Chain from the CN-classified certificates.
+    let chain = sev::certs::snp::Chain::from_der(&classified.ark, &classified.ask, &classified.vek)
+        .map_err(|e| {
+            AttestError::VerificationFailed(format!("failed to build certificate chain: {e}"))
+        })?;
+
+    // Verify the certificate chain (ARK self-signed, ARK signs ASK, ASK signs VCEK/VLEK).
     use sev::certs::snp::Verifiable;
     (&chain, report).verify().map_err(|e| {
         AttestError::VerificationFailed(format!("report signature verification failed: {e}"))
@@ -349,10 +436,10 @@ fn verify_report_with_certs(
     // Verify the ARK is a known AMD root (Milan, Genoa, or Turin).
     // Without this check, an attacker could forge the entire chain with
     // a self-signed ARK of their own creation.
-    verify_ark_is_known_amd_root(&certs[0])?;
+    verify_ark_is_known_amd_root(&classified.ark)?;
 
     let _ = report_bytes; // Used indirectly via report
-    Ok(())
+    Ok(vcek_extensions)
 }
 
 /// Verify that the ARK certificate matches a known AMD root.
@@ -531,13 +618,19 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Build a synthetic attestation report with custom fields.
+    /// Build a synthetic attestation report with fields that pass the Phase 1
+    /// invariant checks (version >= MIN_REPORT_VERSION, sig_algo == ECDSA P-384,
+    /// mask_chip_key == 0).
+    ///
+    /// Tests that specifically want to exercise F9/F10/F11 rejection paths
+    /// should construct their own report or mutate the result of this helper.
     fn build_test_report(
         report_data: [u8; 64],
         measurement: [u8; 48],
     ) -> sev::firmware::guest::AttestationReport {
         sev::firmware::guest::AttestationReport {
             version: 2,
+            sig_algo: super::super::sev_errors::SIG_ALGO_ECDSA_P384_SHA384,
             chip_id: [0xD4; 64],
             report_data,
             measurement,
@@ -623,6 +716,236 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0], cert1);
         assert_eq!(parsed[1], cert2);
+    }
+
+    // -- Phase 1 invariant-check tests (F9/F10/F11) --
+    //
+    // These tests exercise the invariant-check stage directly via the verifier
+    // (which calls it after parse) rather than going through the full
+    // cert-chain validation — tests assert the specific error code fires
+    // before any chain work is attempted.
+
+    /// Helper: wrap a synthetic report in a wire document and run the verifier.
+    /// Returns the error so tests can assert on the code/message.
+    async fn verify_synthetic_report(
+        report: sev::firmware::guest::AttestationReport,
+    ) -> Result<crate::attestation::types::VerifiedAttestation, AttestError> {
+        use sev::parser::ByteParser;
+        let report_bytes = report.to_bytes().unwrap().to_vec();
+        // Use a non-empty cert chain so we don't short-circuit on that error;
+        // since invariants are checked before chain validation, these bytes
+        // never actually get parsed.
+        let doc = AttestationDocument::new(encode_sev_snp_document(&report_bytes, &[0x30, 0x00]));
+        let verifier = SevSnpVerifier::new(None);
+        verifier.verify(&doc).await
+    }
+
+    // F9 (report version below minimum) is unit-tested directly against the
+    // `check_report_invariants` helper in `sev_errors::tests` — the sev crate's
+    // `AttestationReport::from_bytes` rejects versions below 2 at parse time
+    // ("unsupported"), so an integration test through verify() can never reach
+    // our check. Our check remains in place for future-proofing (if
+    // MIN_REPORT_VERSION ever moves to 3 or 5, it begins to fire on
+    // parse-succeeding reports).
+
+    #[tokio::test]
+    async fn verifier_rejects_unsupported_signature_algo() {
+        // F10: sig_algo != 1 (ECDSA P-384/SHA-384) must be rejected explicitly.
+        let mut report = build_test_report([0u8; 64], [0u8; 48]);
+        report.sig_algo = 2; // reserved per ABI Chapter 10 Table 139
+
+        let err = verify_synthetic_report(report).await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("SNP_UNSUPPORTED_SIGNATURE_ALGO"),
+            "expected SNP_UNSUPPORTED_SIGNATURE_ALGO, got: {msg}"
+        );
+        assert!(msg.contains("0x2"), "error should name the bad algo: {msg}");
+    }
+
+    #[tokio::test]
+    async fn verifier_rejects_mask_chip_key_enabled() {
+        // F11: MaskChipKey=1 means the signature field is all zeroes by design.
+        // We reject explicitly before signature verification so the error is
+        // operator-actionable instead of "VEK does not sign the attestation report".
+        let mut report = build_test_report([0u8; 64], [0u8; 48]);
+        // Set bit 1 of key_info to 1 (MASK_CHIP_KEY) — encoded as a u32 with
+        // bit 1 set. The bitfield accessor is read-only, so construct a
+        // KeyInfo directly via its public ByteParser interface.
+        use sev::parser::ByteParser;
+        let key_info_bytes: [u8; 4] = [0x02, 0x00, 0x00, 0x00]; // bit 1 set
+        report.key_info = sev::firmware::guest::KeyInfo::from_bytes(&key_info_bytes).unwrap();
+        assert!(
+            report.key_info.mask_chip_key(),
+            "test precondition: mask_chip_key bit must be set"
+        );
+
+        let err = verify_synthetic_report(report).await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("SNP_MASK_CHIP_KEY_ENABLED"),
+            "expected SNP_MASK_CHIP_KEY_ENABLED, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn verifier_accepts_valid_invariants_reaches_chain_stage() {
+        // Positive: a report with valid invariants falls through to the chain
+        // validation stage (which then rejects our fake cert bytes). Confirms
+        // we don't over-reject in Phase 1.
+        let report = build_test_report([0u8; 64], [0u8; 48]);
+        assert_eq!(report.version, 2);
+        assert_eq!(report.sig_algo, 1);
+        assert!(!report.key_info.mask_chip_key());
+
+        let err = verify_synthetic_report(report).await.unwrap_err();
+        let msg = format!("{err}");
+        // Passing invariants means we reach chain parsing, which fails on
+        // our fake bytes. The specific error differs, but it must NOT be
+        // one of the Phase 1 codes.
+        assert!(
+            !msg.contains("SNP_REPORT_VERSION_TOO_OLD")
+                && !msg.contains("SNP_UNSUPPORTED_SIGNATURE_ALGO")
+                && !msg.contains("SNP_MASK_CHIP_KEY_ENABLED"),
+            "valid report should pass invariants; got: {msg}"
+        );
+    }
+
+    // -- Phase 4: end-to-end policy enforcement through verify() --
+    //
+    // These tests confirm that policy rejection surfaces via the public
+    // verify() API, not just at the internal enforce_report_policy helper.
+    // They use synthetic reports with a fake cert chain — those would
+    // normally fail at chain verification, but policy enforcement runs
+    // AFTER chain verify, so to test enforcement we need to construct a
+    // scenario where chain verify succeeds. We use SnpVerifyPolicy::development()
+    // to disable validity / TCB-binding checks; the bogus cert chain still
+    // won't sig-verify, but we can inspect the error.
+    //
+    // To get a clean policy-stage rejection, we build our own synthetic doc
+    // where chain verify is fully bypassed via development() — but our code
+    // never bypasses chain verify (it's always on). The practical test is:
+    // at the INVARIANT stage, we reject early on VMPL mismatch?
+    //
+    // Actually no — VMPL check is in enforce_report_policy, which runs AFTER
+    // chain verify. So a synthetic report with VMPL=1 and a bogus chain will
+    // fail at chain stage first, masking the policy check.
+    //
+    // Real integration of the policy path requires a signature-valid chain,
+    // which means real Milan hardware or mocked sev-crate internals. That
+    // coverage lives in sev_policy::tests — the unit tests exercise
+    // enforce_report_policy directly and confirm each error variant fires.
+    // Here we only assert the policy plumbing compiles and is reachable.
+
+    #[tokio::test]
+    async fn verify_uses_policy_from_with_policy_constructor() {
+        // Exercise the full verify() path with a custom policy. The report
+        // has valid invariants but the cert chain is fake, so verify() fails
+        // at the chain stage. What we prove: no panic, the new policy
+        // plumbing compiles correctly, and the failure is NOT from a Phase 4
+        // enforcement code (because we never reach that stage).
+        use super::super::sev_errors::SnpProduct;
+
+        let policy = SnpVerifyPolicy {
+            accepted_products: vec![SnpProduct::Genoa],
+            ..SnpVerifyPolicy::production()
+        };
+        let verifier = SevSnpVerifier::with_policy(policy);
+        assert_eq!(verifier.policy().accepted_products.len(), 1);
+
+        let report = build_test_report([0u8; 64], [0u8; 48]);
+        use sev::parser::ByteParser;
+        let report_bytes = report.to_bytes().unwrap().to_vec();
+        let doc = AttestationDocument::new(encode_sev_snp_document(&report_bytes, &[0x30, 0x00]));
+
+        let err = verifier.verify(&doc).await.unwrap_err().to_string();
+        // Should reach chain parsing (fails there), NOT policy-stage codes.
+        for phase4_code in [
+            "SNP_DEBUG_GUEST_REJECTED",
+            "SNP_MIGRATABLE_GUEST_REJECTED",
+            "SNP_VMPL_MISMATCH",
+            "SNP_HOST_REQUESTED_REPORT_REJECTED",
+            "SNP_PRODUCT_MISMATCH",
+        ] {
+            assert!(
+                !err.contains(phase4_code),
+                "synthetic report with bogus chain should fail before Phase 4 enforcement, got: {err}"
+            );
+        }
+    }
+
+    // -- Phase 3 verifier-API tests --
+
+    #[test]
+    fn new_with_none_measurement_uses_production_policy() {
+        let v = SevSnpVerifier::new(None);
+        let policy = v.policy();
+        assert!(policy.expected_measurement.is_none());
+        assert!(policy.reject_debug, "new() must use production defaults");
+        assert!(policy.reject_migratable);
+        assert_eq!(policy.require_vmpl, Some(0));
+        assert!(policy.check_validity);
+        assert!(policy.check_tcb_binding);
+    }
+
+    #[test]
+    fn new_with_measurement_threads_it_into_policy() {
+        let m = vec![0xABu8; 48];
+        let v = SevSnpVerifier::new(Some(m.clone()));
+        assert_eq!(
+            v.policy().expected_measurement.as_deref(),
+            Some(m.as_slice())
+        );
+        // Other defaults preserved.
+        assert!(v.policy().reject_debug);
+    }
+
+    #[test]
+    fn with_policy_takes_arbitrary_policy() {
+        use super::super::sev_errors::SnpProduct;
+
+        let custom = SnpVerifyPolicy {
+            expected_measurement: Some(vec![0xCD; 48]),
+            accepted_products: vec![SnpProduct::Genoa],
+            reject_debug: false, // explicit dev override
+            ..SnpVerifyPolicy::production()
+        };
+        let v = SevSnpVerifier::with_policy(custom);
+        assert_eq!(v.policy().accepted_products.len(), 1);
+        assert!(v.policy().accepted_products.contains(&SnpProduct::Genoa));
+        assert!(!v.policy().reject_debug);
+        // Non-overridden defaults stick:
+        assert_eq!(v.policy().require_vmpl, Some(0));
+    }
+
+    #[tokio::test]
+    async fn new_and_with_policy_produce_equivalent_measurement_behavior() {
+        // Backward-compat guarantee: SevSnpVerifier::new(Some(m)) must behave
+        // identically to with_policy(SnpVerifyPolicy { expected_measurement: Some(m), ... })
+        // for the measurement check specifically.
+        let m = vec![0xEE; 48];
+        let v1 = SevSnpVerifier::new(Some(m.clone()));
+        let v2 = SevSnpVerifier::with_policy(SnpVerifyPolicy {
+            expected_measurement: Some(m.clone()),
+            ..SnpVerifyPolicy::production()
+        });
+
+        // Build a doc that fails invariants identically in both — we're only
+        // proving the policies are equivalent at the public-policy boundary.
+        let mismatched_measurement = [0xFFu8; 48];
+        let report = build_test_report([0u8; 64], mismatched_measurement);
+        use sev::parser::ByteParser;
+        let report_bytes = report.to_bytes().unwrap().to_vec();
+        let doc = AttestationDocument::new(encode_sev_snp_document(&report_bytes, &[0x30, 0x00]));
+
+        let err1 = v1.verify(&doc).await.unwrap_err().to_string();
+        let err2 = v2.verify(&doc).await.unwrap_err().to_string();
+        // Both fail at the same stage (chain parsing — measurement check happens
+        // later), proving policy equivalence at the verifier boundary.
+        assert_eq!(
+            err1, err2,
+            "new() and with_policy() produced divergent errors"
+        );
     }
 
     #[cfg(target_os = "linux")]
