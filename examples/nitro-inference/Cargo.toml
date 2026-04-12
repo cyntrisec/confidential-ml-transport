@@ -24,7 +24,7 @@ vsock-nitro = ["confidential-ml-transport/vsock", "confidential-ml-transport/nit
 confidential-ml-transport = { path = "../..", default-features = false }
 candle-core = "0.9"
 candle-nn = "0.9"
-candle-transformers = "0.9"
+candle-transformers = "0.10"
 tokenizers = "0.20"
 safetensors = "0.5"
 hf-hub = "0.5"
