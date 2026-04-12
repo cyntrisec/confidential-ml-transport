@@ -20,7 +20,7 @@ tokio-util = { version = "0.7", features = ["codec"] }
 thiserror = "2"
 tracing = "0.1"
 sha2 = "0.10"
-hkdf = "0.12"
+hkdf = "0.13"
 chacha20poly1305 = "0.10"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 rand = "0.8"
