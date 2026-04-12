@@ -133,7 +133,7 @@ impl fmt::Display for SnpProduct {
 
 /// Certificate role in the SEV-SNP trust chain.
 ///
-/// Used by [`check_cert_chain_validity`] and [`classify_pem_certs_by_cn`]
+/// Used by [`check_cert_chain_validity`] and [`classify_certs_by_cn`]
 /// to produce role-specific error variants when a cert is expired, not yet
 /// valid, or misidentified.
 ///

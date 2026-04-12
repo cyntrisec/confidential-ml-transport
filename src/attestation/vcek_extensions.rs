@@ -355,7 +355,6 @@ mod tests {
         }
     }
 
-
     /// Build a synthetic VCEK-like cert with the requested TCB extensions.
     /// Self-signed so signature chain doesn't matter — we test extension parse.
     #[allow(clippy::too_many_arguments)]
