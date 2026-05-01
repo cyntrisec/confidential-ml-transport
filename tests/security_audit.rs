@@ -14,6 +14,27 @@ use confidential_ml_transport::frame::{Flags, Frame};
 use confidential_ml_transport::session::channel::{Message, SecureChannel};
 use confidential_ml_transport::{MockProvider, MockVerifier, SessionConfig};
 
+fn mock_attestation_doc(
+    user_data: Option<&[u8]>,
+    nonce: Option<&[u8]>,
+    public_key: Option<&[u8]>,
+) -> confidential_ml_transport::attestation::types::AttestationDocument {
+    let mut raw = Vec::new();
+    raw.extend_from_slice(b"MOCK_ATT_V1\0");
+
+    for field in [user_data, nonce, public_key] {
+        match field {
+            Some(data) => {
+                raw.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                raw.extend_from_slice(data);
+            }
+            None => raw.extend_from_slice(&0u32.to_le_bytes()),
+        }
+    }
+
+    confidential_ml_transport::attestation::types::AttestationDocument::new(raw)
+}
+
 // ---------------------------------------------------------------------------
 // Fix #3: All post-handshake frames must be encrypted
 // ---------------------------------------------------------------------------
@@ -249,7 +270,6 @@ async fn handshake_within_timeout_succeeds() {
 #[tokio::test]
 async fn reject_attestation_without_public_key() {
     use async_trait::async_trait;
-    use confidential_ml_transport::attestation::types::AttestationDocument;
     use confidential_ml_transport::error::AttestError;
     use confidential_ml_transport::AttestationProvider;
 
@@ -263,24 +283,9 @@ async fn reject_attestation_without_public_key() {
             _user_data: Option<&[u8]>,
             nonce: Option<&[u8]>,
             _public_key: Option<&[u8]>,
-        ) -> Result<AttestationDocument, AttestError> {
-            // Intentionally omit the public key field.
-            let mut raw = Vec::new();
-            raw.extend_from_slice(b"MOCK_ATT_V1\0");
-            // user_data = None
-            raw.extend_from_slice(&0u32.to_le_bytes());
-            // nonce
-            match nonce {
-                Some(data) => {
-                    raw.extend_from_slice(&(data.len() as u32).to_le_bytes());
-                    raw.extend_from_slice(data);
-                }
-                None => raw.extend_from_slice(&0u32.to_le_bytes()),
-            }
-            // public_key = None (the bug: not binding the key)
-            raw.extend_from_slice(&0u32.to_le_bytes());
-
-            Ok(AttestationDocument::new(raw))
+        ) -> Result<confidential_ml_transport::attestation::types::AttestationDocument, AttestError>
+        {
+            Ok(mock_attestation_doc(None, nonce, None))
         }
     }
 
@@ -319,6 +324,125 @@ async fn reject_attestation_without_public_key() {
         assert!(
             err.contains("missing") || err.contains("public_key"),
             "error should mention missing public_key: {err}"
+        );
+    });
+
+    let _ = server_handle.await;
+    client_handle.await.unwrap();
+}
+
+/// An attestation document without the handshake nonce must fail.
+#[tokio::test]
+async fn reject_attestation_without_nonce() {
+    use async_trait::async_trait;
+    use confidential_ml_transport::error::AttestError;
+    use confidential_ml_transport::AttestationProvider;
+
+    struct NoNonceProvider;
+
+    #[async_trait]
+    impl AttestationProvider for NoNonceProvider {
+        async fn attest(
+            &self,
+            _user_data: Option<&[u8]>,
+            _nonce: Option<&[u8]>,
+            public_key: Option<&[u8]>,
+        ) -> Result<confidential_ml_transport::attestation::types::AttestationDocument, AttestError>
+        {
+            Ok(mock_attestation_doc(None, None, public_key))
+        }
+    }
+
+    let (client_transport, server_transport) = tokio::io::duplex(16384);
+    let verifier = MockVerifier::new();
+
+    let server_handle = tokio::spawn(async move {
+        let result = SecureChannel::accept_with_attestation(
+            server_transport,
+            &NoNonceProvider,
+            &MockVerifier::new(),
+            SessionConfig::development(),
+        )
+        .await;
+        let _ = result;
+    });
+
+    let client_handle = tokio::spawn(async move {
+        let result = SecureChannel::connect_with_attestation(
+            client_transport,
+            &MockProvider::new(),
+            &verifier,
+            SessionConfig::development(),
+        )
+        .await;
+
+        assert!(result.is_err(), "should reject attestation without nonce");
+        let err = format!("{}", result.err().unwrap());
+        assert!(
+            err.contains("nonce"),
+            "error should mention missing nonce: {err}"
+        );
+    });
+
+    let _ = server_handle.await;
+    client_handle.await.unwrap();
+}
+
+/// An attestation document with a nonce different from the hello nonce must fail.
+#[tokio::test]
+async fn reject_attestation_with_nonce_mismatch() {
+    use async_trait::async_trait;
+    use confidential_ml_transport::error::AttestError;
+    use confidential_ml_transport::AttestationProvider;
+
+    struct WrongNonceProvider;
+
+    #[async_trait]
+    impl AttestationProvider for WrongNonceProvider {
+        async fn attest(
+            &self,
+            _user_data: Option<&[u8]>,
+            nonce: Option<&[u8]>,
+            public_key: Option<&[u8]>,
+        ) -> Result<confidential_ml_transport::attestation::types::AttestationDocument, AttestError>
+        {
+            let mut wrong_nonce = [0u8; 32];
+            if let Some(nonce) = nonce {
+                wrong_nonce.copy_from_slice(&nonce[..32]);
+            }
+            wrong_nonce[0] ^= 0x80;
+            Ok(mock_attestation_doc(None, Some(&wrong_nonce), public_key))
+        }
+    }
+
+    let (client_transport, server_transport) = tokio::io::duplex(16384);
+    let verifier = MockVerifier::new();
+
+    let server_handle = tokio::spawn(async move {
+        let result = SecureChannel::accept_with_attestation(
+            server_transport,
+            &WrongNonceProvider,
+            &MockVerifier::new(),
+            SessionConfig::development(),
+        )
+        .await;
+        let _ = result;
+    });
+
+    let client_handle = tokio::spawn(async move {
+        let result = SecureChannel::connect_with_attestation(
+            client_transport,
+            &MockProvider::new(),
+            &verifier,
+            SessionConfig::development(),
+        )
+        .await;
+
+        assert!(result.is_err(), "should reject attestation nonce mismatch");
+        let err = format!("{}", result.err().unwrap());
+        assert!(
+            err.contains("nonce"),
+            "error should mention nonce mismatch: {err}"
         );
     });
 

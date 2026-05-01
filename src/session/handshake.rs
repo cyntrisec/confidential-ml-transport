@@ -192,6 +192,7 @@ fn derive_session_id(transcript_hash: &[u8; 32]) -> Result<[u8; 32], crate::erro
 fn verify_attestation(
     verified: &VerifiedAttestation,
     peer_pk_bytes: &[u8; 32],
+    peer_nonce_bytes: &[u8; 32],
     expected_measurements: Option<&ExpectedMeasurements>,
     role: &str,
 ) -> Result<(), crate::error::Error> {
@@ -204,6 +205,20 @@ fn verify_attestation(
         }
         None => {
             return Err(AttestError::MissingField("public_key".into()).into());
+        }
+    }
+
+    // Verify the attestation binds the peer's handshake nonce. The hello nonce is
+    // part of the key transcript; accepting an attestation that omits or changes
+    // it would let stale evidence be replayed into a fresh handshake.
+    match verified.nonce {
+        Some(ref att_nonce) => {
+            if att_nonce.as_slice() != peer_nonce_bytes.as_slice() {
+                return Err(AttestError::VerificationFailed("nonce mismatch".into()).into());
+            }
+        }
+        None => {
+            return Err(AttestError::MissingField("nonce".into()).into());
         }
     }
 
@@ -365,6 +380,7 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
     verify_attestation(
         &verified,
         &resp_pk_bytes,
+        &resp_nonce,
         expected_measurements,
         "initiator",
     )?;
@@ -442,6 +458,7 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     verify_attestation(
         &init_verified,
         &init_pk_bytes,
+        &init_nonce,
         expected_measurements,
         "responder",
     )?;

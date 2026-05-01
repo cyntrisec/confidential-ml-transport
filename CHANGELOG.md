@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-05-01
+
+### Security
+
+- **TDX DCAP AK/PCK binding fixed** — verification now follows Intel DCAP's transitive binding model: the PCK leaf verifies the QE Report signature, and the QE Report `report_data` binds `SHA256(AK_pubkey || qe_auth_data)`. The previous direct `PCK_leaf == AK` check was wrong for real Intel TDX quotes.
+- **Real Intel DCAP v4 QE Report layout supported** — QE Report parsing now detects the outer `QECertificationData` wrapper at signature-data offset 128 and parses real DCAP v4 reports at offset 134, while preserving legacy synthetic fixture compatibility.
+- **Handshake nonce binding enforced** — peer attestation must bind the same nonce carried in the handshake hello. Missing or mismatched attestation nonces now fail the handshake instead of allowing stale attestation evidence into a fresh key exchange.
+
+### Fixed
+
+- Strict TDX verification now accepts real Google Confidential Space TDX quotes with complete Intel PCS collateral when the quote, CS token, and nonce binding are valid.
+
 ## [0.6.0] - 2026-04-03
 
 ### Security
@@ -178,6 +190,7 @@ Initial release.
 - Session retry with exponential backoff.
 - Measurement/PCR verification.
 
+[0.6.1]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.3.0...v0.4.0
