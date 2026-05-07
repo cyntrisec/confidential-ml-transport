@@ -96,3 +96,8 @@ required-features = ["tcp", "mock"]
 [[example]]
 name = "azure-sev-snp-smoke"
 required-features = ["azure-sev-snp"]
+
+[[example]]
+name = "tdx-real-quote-verify"
+required-features = ["tdx"]
+
