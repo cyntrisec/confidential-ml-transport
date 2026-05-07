@@ -94,8 +94,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let header_text = fs::read_to_string(&tcb_chain_header_path)?;
     let mut tcb_chain_pem = String::new();
     for line in header_text.lines() {
-        if line.starts_with("TCB-Info-Issuer-Chain:") {
-            let val = line["TCB-Info-Issuer-Chain:".len()..].trim();
+        if let Some(stripped) = line.strip_prefix("TCB-Info-Issuer-Chain:") {
+            let val = stripped.trim();
             tcb_chain_pem = url_decode(val);
             break;
         }
