@@ -101,3 +101,7 @@ required-features = ["azure-sev-snp"]
 name = "tdx-real-quote-verify"
 required-features = ["tdx"]
 
+
+[[example]]
+name = "nitro-real-quote-verify"
+required-features = ["nitro"]
