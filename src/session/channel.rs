@@ -175,7 +175,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
 
     /// Return the peer's verified attestation.
     ///
-    /// With mutual attestation (v3), both the initiator and responder receive
+    /// With the current mutual-attestation handshake, both the initiator and responder receive
     /// the peer's verified attestation including `user_data`, `public_key`, and
     /// `measurements`.
     pub fn peer_attestation(&self) -> Option<&VerifiedAttestation> {

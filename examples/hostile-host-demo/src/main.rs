@@ -70,8 +70,8 @@ fn make_input_ids() -> OwnedTensor {
 /// Pattern: token_id * 0.001 + dim_idx * 0.0001
 fn make_hidden_states() -> OwnedTensor {
     let mut data = Vec::with_capacity(5 * 768 * 4);
-    for token_idx in 0..5 {
-        let base = TOKEN_IDS[token_idx] as f32 * 0.001;
+    for token_id in TOKEN_IDS {
+        let base = token_id as f32 * 0.001;
         for dim in 0..768u32 {
             let val = base + dim as f32 * 0.0001;
             data.extend_from_slice(&val.to_le_bytes());
@@ -633,7 +633,7 @@ fn print_comparison(captured_a: &[u8], captured_b_fwd: &[u8], captured_b_bwd: &[
     println!();
     println!("--- COMPARISON ---");
     println!();
-    println!("                        {:<16}{}", "Mode A", "Mode B");
+    println!("                        {:<16}Mode B", "Mode A");
     println!(
         "Bytes captured:         {:<16}{}",
         captured_a.len(),

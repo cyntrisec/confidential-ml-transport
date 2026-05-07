@@ -318,8 +318,8 @@ fn validate_handshake_frame(
 
 /// Run the initiator (client) side of the handshake.
 ///
-/// In v3 (mutual attestation), the initiator sends its own attestation document
-/// in Msg1 and verifies the responder's attestation in Msg2. Both sides receive
+/// The initiator sends its own attestation document in Msg1 and verifies the
+/// responder's attestation in Msg2. Both sides receive
 /// `peer_attestation: Some(verified)`.
 ///
 /// Individual frame reads are not independently timed; the caller is expected
@@ -423,8 +423,8 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
 
 /// Run the responder (server) side of the handshake.
 ///
-/// In v3 (mutual attestation), the responder verifies the initiator's attestation
-/// from Msg1 and sends its own attestation in Msg2. Both sides receive
+/// The responder verifies the initiator's attestation from Msg1 and sends its
+/// own attestation in Msg2. Both sides receive
 /// `peer_attestation: Some(verified)`.
 ///
 /// Individual frame reads are not independently timed; the caller is expected

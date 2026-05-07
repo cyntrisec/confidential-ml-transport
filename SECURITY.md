@@ -69,7 +69,7 @@ The transparent proxy (both client and server) limits concurrent connections via
 | Property | Mechanism |
 |----------|-----------|
 | Encryption | All post-handshake frames encrypted via ChaCha20-Poly1305 AEAD |
-| Authentication | AAD = `version \|\| session_id \|\| sequence` binds each frame to its session and position |
+| Authentication | AAD = `version \|\| msg_type \|\| flags \|\| session_id \|\| sequence` binds each frame to its type, flags, session, and position |
 | Replay protection | Monotonic u64 sequence counter; any sequence ≤ last accepted is rejected |
 | Unencrypted rejection | Receiving an unencrypted frame in an established session returns `UnencryptedFrame` error |
 | Unified counters | The AEAD sealer's internal sequence is used directly as the frame header sequence number |
@@ -79,14 +79,14 @@ The transparent proxy (both client and server) limits concurrent connections via
 | Property | Mechanism |
 |----------|-----------|
 | Timeout | Configurable via `SessionConfig::handshake_timeout` (default: 30s) |
-| Public key binding | Responder's attestation must contain a public key matching the handshake DH key |
+| Public key binding | Each peer's attestation must contain a public key matching its handshake DH key |
 | Confirmation binding | Confirmation hash includes both send and recv keys, proving mutual key agreement |
 | Sequence validation | Frame sequence numbers validated during handshake (hello=0, confirmation=1) |
 | Measurement verification | Optional `ExpectedMeasurements` checked before any application data flows |
 
 ## Known Limitations
 
-- **TDX verifier is not trust-anchored (experimental)**: The TDX verifier (`TdxVerifier`) checks ECDSA-P256 signature validity, but the verification key is extracted from the quote itself. Without DCAP collateral verification (PCK certificate chain, QE identity, TCB info from Intel), a synthetic/self-issued quote can pass verification. Full DCAP support is planned under the `tdx-dcap` feature. **Do not use `TdxVerifier` in production without additional trust anchoring.**
+- **TDX default constructor is compatibility mode**: TDX DCAP trust anchoring is implemented through `TdxVerifier::with_policy(...)` with `collateral: Some(...)` and `require_collateral: true`. The backward-compatible `TdxVerifier::new(...)` constructor uses the default policy and does not require collateral. **Do not use `TdxVerifier::new(...)` as the sole production trust decision.**
 - **No transport binding**: The channel does not bind to a specific transport address (IP, VSock CID). Perform transport-level identity checks separately if required.
 - **Proxy is TCP-only**: The transparent proxy supports TCP backends only.
 
@@ -121,8 +121,8 @@ Include as much of the following as possible:
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x (latest) | Yes |
-| < 0.1.0 | No |
+| 0.6.x (latest) | Yes |
+| < 0.6.0 | No |
 
 ### Disclosure Policy
 
@@ -140,7 +140,7 @@ We follow coordinated disclosure:
 |---------|-----|----------|
 | 0.5.0 | SEV-SNP/Azure verifiers now reject empty certificate chains (was accepting forged attestations) | Critical |
 | 0.5.0 | SEV-SNP/Azure verifiers now pin ARK to known AMD roots (Milan/Genoa/Turin) | High |
-| 0.5.0 | TDX verifier emits explicit warning about lack of DCAP trust anchoring | Medium |
+| 0.5.0 | TDX verifier supports DCAP trust anchoring through policy/collateral; default constructor remains compatibility mode | Medium |
 | 0.5.0 | Handshake read buffer reduced from 32 MiB to ~65 KiB to prevent memory DoS | Medium |
 | 0.5.0 | TDX provider uses RAII guard for configfs-tsm entry cleanup on error | Low |
 | 0.1.2 | Constant-time confirmation hash comparison (`subtle::ct_eq`) to prevent timing side-channel | Medium |

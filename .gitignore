@@ -6,6 +6,8 @@
 /fuzz/artifacts
 examples/nitro-inference/model/
 examples/nitro-inference/*.eif
+examples/nitro-inference/nitro-inference.measurements.json
+examples/nitro-inference/nitro-inference.pcrs.env
 benchmark_results/*.json
 benchmark_results/*.md
 .env
@@ -20,4 +22,3 @@ benchmark_results/*.md
 #   Safe to commit. Managed by scripts/fetch-snp-fixtures.sh.
 #   DO NOT commit anything chip-specific (VCEK, attestation reports, chip_id,
 #   handshake transcripts). See test_assets/sev-snp/README.md for policy.
-

@@ -58,13 +58,25 @@ Input: "Hello world"
 Requires an EC2 instance with Nitro Enclaves enabled (e.g., m6i.xlarge) and
 `nitro-cli` installed.
 
+Security posture:
+- `scripts/run.sh` launches production-mode enclaves by default (`Flags: NONE`, no `--debug-mode`).
+- `scripts/build.sh` writes `nitro-inference.pcrs.env` from `nitro-cli build-enclave`; the host client refuses to run without PCR0/1/2 pins unless you explicitly set `ALLOW_UNPINNED_NITRO_FOR_DEV=I_UNDERSTAND`.
+- This example authenticates the enclave to the host. The enclave-side server uses `MockVerifier` for the host initiator because the host is outside the enclave and does not have a Nitro attestation provider in this demo. Do not describe this example as full production mutual host identity.
+
 ### 1. Build
 
 ```bash
 bash scripts/build.sh
 ```
 
-This downloads the model, builds the Docker image, and creates the EIF.
+This downloads the model, builds the Docker image, creates the EIF, and writes:
+
+```
+nitro-inference.measurements.json
+nitro-inference.pcrs.env
+```
+
+The `.env` file contains `EXPECTED_PCR0`, `EXPECTED_PCR1`, and `EXPECTED_PCR2` for the exact EIF build.
 
 ### 2. Run
 
@@ -78,12 +90,13 @@ Or manually:
 # Launch enclave
 nitro-cli run-enclave \
   --eif-path nitro-inference.eif \
-  --cpu-count 2 --memory 2048 --debug-mode
+  --cpu-count 2 --memory 2048
 
 # Get CID
 CID=$(nitro-cli describe-enclaves | jq -r '.[0].EnclaveCID')
 
-# Run client
+# Load PCR pins from the build output and run client
+source nitro-inference.pcrs.env
 cargo run --release --bin host-client \
   --no-default-features --features vsock-nitro \
   -- --cid $CID --text "Hello from the host"
@@ -97,9 +110,9 @@ nitro-cli terminate-enclave --enclave-id <id>
 ```
 Client                              Server (Enclave)
   |                                    |
-  |--- [SecureChannel handshake] ----->|
-  |<-- [attestation + keys] ----------|
-  |--- [confirmation] --------------->|
+  |--- [keys + mock host attestation]->|
+  |<-- [keys + Nitro attestation] -----|
+  |--- [confirmation] ---------------->|
   |                                    |
   |--- Data("Hello world") ---------->|
   |                                    | model.encode("Hello world")
@@ -113,3 +126,6 @@ Client                              Server (Enclave)
 - `RUST_LOG` — tracing filter (e.g., `RUST_LOG=info`)
 - `ENCLAVE_CPUS` — vCPUs for enclave (default: 2)
 - `ENCLAVE_MEM` — memory in MiB for enclave (default: 2048)
+- `EXPECTED_PCR0`, `EXPECTED_PCR1`, `EXPECTED_PCR2` — production Nitro PCR pins from `nitro-cli build-enclave`
+- `NITRO_DEBUG_MODE=1` — launch with `--debug-mode` for local diagnostics only
+- `ALLOW_UNPINNED_NITRO_FOR_DEV=I_UNDERSTAND` — allow unpinned PCRs for dev-only runs

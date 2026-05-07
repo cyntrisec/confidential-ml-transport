@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Nitro inference example now launches production-mode enclaves by default and requires PCR0/1/2 pins unless the operator explicitly sets `ALLOW_UNPINNED_NITRO_FOR_DEV=I_UNDERSTAND`.
+
+### Fixed
+
+- README and SECURITY documentation now reflect protocol v4, mutual attestation, current AAD binding, current API signatures, current test counts, and TDX DCAP trust-anchoring requirements.
+
 ## [0.6.1] - 2026-05-01
 
 ### Security

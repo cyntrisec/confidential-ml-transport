@@ -51,9 +51,29 @@ if command -v nitro-cli &> /dev/null; then
 
     echo ""
     echo "Building EIF..."
+    MEASUREMENTS_JSON="$EXAMPLE_DIR/nitro-inference.measurements.json"
+    PCR_ENV_FILE="$EXAMPLE_DIR/nitro-inference.pcrs.env"
     nitro-cli build-enclave \
         --docker-uri nitro-inference:latest \
-        --output-file "$EXAMPLE_DIR/nitro-inference.eif"
+        --output-file "$EXAMPLE_DIR/nitro-inference.eif" | tee "$MEASUREMENTS_JSON"
+
+    if command -v jq &> /dev/null; then
+        PCR0="$(jq -r '.Measurements.PCR0 // empty' "$MEASUREMENTS_JSON")"
+        PCR1="$(jq -r '.Measurements.PCR1 // empty' "$MEASUREMENTS_JSON")"
+        PCR2="$(jq -r '.Measurements.PCR2 // empty' "$MEASUREMENTS_JSON")"
+        if [ -n "$PCR0" ] && [ -n "$PCR1" ] && [ -n "$PCR2" ]; then
+            {
+                printf 'EXPECTED_PCR0=%s\n' "$PCR0"
+                printf 'EXPECTED_PCR1=%s\n' "$PCR1"
+                printf 'EXPECTED_PCR2=%s\n' "$PCR2"
+            } > "$PCR_ENV_FILE"
+            echo "PCR pins written to: $PCR_ENV_FILE"
+        else
+            echo "WARNING: build-enclave output did not include PCR0/1/2; no PCR env file written."
+        fi
+    else
+        echo "WARNING: jq not found; PCR env file not written. Save PCR0/1/2 from $MEASUREMENTS_JSON manually."
+    fi
 
     echo ""
     echo "EIF built at: $EXAMPLE_DIR/nitro-inference.eif"

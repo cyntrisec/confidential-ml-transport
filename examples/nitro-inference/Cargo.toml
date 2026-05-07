@@ -18,7 +18,14 @@ path = "src/bench_client.rs"
 [features]
 default = ["tcp-mock"]
 tcp-mock = ["confidential-ml-transport/mock", "confidential-ml-transport/tcp"]
-vsock-nitro = ["confidential-ml-transport/vsock", "confidential-ml-transport/nitro", "dep:tokio-vsock"]
+vsock-nitro = [
+    "confidential-ml-transport/vsock",
+    "confidential-ml-transport/nitro",
+    # This demo uses mock attestation for the non-enclave peer. The enclave's
+    # Nitro attestation is still verified by PCR pins on the host side.
+    "confidential-ml-transport/mock",
+    "dep:tokio-vsock",
+]
 
 [dependencies]
 confidential-ml-transport = { path = "../..", default-features = false }

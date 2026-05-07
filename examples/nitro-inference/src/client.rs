@@ -36,34 +36,80 @@ fn create_verifier() -> Box<dyn confidential_ml_transport::AttestationVerifier> 
 }
 
 #[cfg(feature = "vsock-nitro")]
-fn create_verifier() -> Result<Box<dyn confidential_ml_transport::AttestationVerifier>> {
-    let mut expected_pcrs = BTreeMap::new();
+const PCR_ENV_VARS: [(&str, usize); 3] = [
+    ("EXPECTED_PCR0", 0),
+    ("EXPECTED_PCR1", 1),
+    ("EXPECTED_PCR2", 2),
+];
 
-    // Load expected PCR values from environment variables.
-    // Set EXPECTED_PCR0, EXPECTED_PCR1, EXPECTED_PCR2 from `nitro-cli build-enclave` output.
-    // If none are set, verification is skipped with a warning — NOT safe for production.
-    for (env_key, pcr_idx) in [
-        ("EXPECTED_PCR0", 0u8),
-        ("EXPECTED_PCR1", 1),
-        ("EXPECTED_PCR2", 2),
-    ] {
-        if let Ok(hex_val) = std::env::var(env_key) {
-            if !hex_val.is_empty() {
-                let bytes = hex::decode(&hex_val)
+#[cfg(feature = "vsock-nitro")]
+fn allow_unpinned_nitro_for_dev() -> bool {
+    matches!(
+        std::env::var("ALLOW_UNPINNED_NITRO_FOR_DEV").as_deref(),
+        Ok("I_UNDERSTAND")
+    )
+}
+
+#[cfg(feature = "vsock-nitro")]
+fn load_expected_pcrs() -> Result<BTreeMap<usize, Vec<u8>>> {
+    let mut expected_pcrs = BTreeMap::new();
+    let mut missing = Vec::new();
+
+    for (env_key, pcr_idx) in PCR_ENV_VARS {
+        match std::env::var(env_key) {
+            Ok(hex_val) if !hex_val.trim().is_empty() => {
+                let hex_val = hex_val.trim().trim_start_matches("0x");
+                let bytes = hex::decode(hex_val)
                     .map_err(|e| anyhow::anyhow!("{env_key} is not valid hex: {e}"))?;
+                anyhow::ensure!(
+                    bytes.len() == 48,
+                    "{env_key} must be a 48-byte SHA-384 PCR value, got {} bytes",
+                    bytes.len()
+                );
                 expected_pcrs.insert(pcr_idx, bytes);
             }
+            _ => missing.push(env_key),
         }
     }
 
-    if expected_pcrs.is_empty() {
-        eprintln!("WARNING: No EXPECTED_PCR0/1/2 set — accepting ANY enclave measurement.");
-        eprintln!("         This is insecure. Set PCR env vars for production use.");
+    if !missing.is_empty() {
+        if allow_unpinned_nitro_for_dev() {
+            eprintln!(
+                "WARNING: ALLOW_UNPINNED_NITRO_FOR_DEV=I_UNDERSTAND is set; \
+                 accepting any Nitro PCR measurement for this dev run."
+            );
+            return Ok(BTreeMap::new());
+        }
+        anyhow::bail!(
+            "missing Nitro PCR pins: {}. Source nitro-inference.pcrs.env or set \
+             EXPECTED_PCR0/1/2 from `nitro-cli build-enclave`. For dev-only \
+             unpinned runs, set ALLOW_UNPINNED_NITRO_FOR_DEV=I_UNDERSTAND.",
+            missing.join(", ")
+        );
     }
 
+    Ok(expected_pcrs)
+}
+
+#[cfg(feature = "vsock-nitro")]
+fn create_verifier(
+    expected_pcrs: BTreeMap<usize, Vec<u8>>,
+) -> Result<Box<dyn confidential_ml_transport::AttestationVerifier>> {
     Ok(Box::new(confidential_ml_transport::NitroVerifier::new(
         expected_pcrs,
     )?))
+}
+
+#[cfg(feature = "vsock-nitro")]
+fn create_session_config(expected_pcrs: &BTreeMap<usize, Vec<u8>>) -> Result<SessionConfig> {
+    if expected_pcrs.is_empty() {
+        return Ok(SessionConfig::development());
+    }
+    Ok(SessionConfig::builder()
+        .expected_measurements(confidential_ml_transport::ExpectedMeasurements::new(
+            expected_pcrs.clone(),
+        ))
+        .build()?)
 }
 
 #[tokio::main]
@@ -82,9 +128,14 @@ async fn main() -> Result<()> {
     let provider: Box<dyn confidential_ml_transport::AttestationProvider> =
         Box::new(confidential_ml_transport::MockProvider::new());
     #[cfg(feature = "vsock-nitro")]
-    let verifier = create_verifier()?;
+    let expected_pcrs = load_expected_pcrs()?;
+    #[cfg(feature = "vsock-nitro")]
+    let verifier = create_verifier(expected_pcrs.clone())?;
 
+    #[cfg(feature = "tcp-mock")]
     let config = SessionConfig::development();
+    #[cfg(feature = "vsock-nitro")]
+    let config = create_session_config(&expected_pcrs)?;
 
     #[cfg(feature = "tcp-mock")]
     let transport = {

@@ -47,14 +47,24 @@ use bytes::Bytes;
 
 // Server: accept an attested encrypted connection
 let (stream, _) = listener.accept().await?;
+let server_provider = MockProvider::new();
+let server_verifier = MockVerifier::new();
 let mut server = SecureChannel::accept_with_attestation(
-    stream, &MockProvider::new(), SessionConfig::default(),
+    stream,
+    &server_provider,
+    &server_verifier,
+    SessionConfig::development(),
 ).await?;
 
 // Client: connect with attestation verification
 let stream = tokio::net::TcpStream::connect("127.0.0.1:9876").await?;
+let client_provider = MockProvider::new();
+let client_verifier = MockVerifier::new();
 let mut client = SecureChannel::connect_with_attestation(
-    stream, &MockVerifier::new(), SessionConfig::default(),
+    stream,
+    &client_provider,
+    &client_verifier,
+    SessionConfig::development(),
 ).await?;
 
 client.send(Bytes::from("hello")).await?;
@@ -73,7 +83,7 @@ client.send(Bytes::from("hello")).await?;
 - **Full channel encryption** — all post-handshake frames (data, tensor, heartbeat, shutdown, error) are encrypted and authenticated via AEAD
 - **Key material protection** — symmetric keys zeroized on drop, contributory DH check, domain-separated session ID
 - **Pluggable transports** — TCP and VSock backends via feature flags
-- **Pluggable attestation** — trait-based attestation provider/verifier, with mock, Nitro, SEV-SNP, and TDX implementations
+- **Pluggable attestation** — trait-based attestation provider/verifier, with mock, Nitro, SEV-SNP, Azure SEV-SNP, and TDX implementations
 - **Monotonic sequence enforcement** — replay protection on every decrypted message
 - **Hardened handshake** — configurable timeout, mandatory public key binding, sequence validation, confirmation binds both keys
 - **Measurement verification** — verify PCR/measurement registers against expected values during handshake
@@ -88,7 +98,7 @@ client.send(Bytes::from("hello")).await?;
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|         magic (0xCF4D)        |  version (2)  |   msg_type    |
+|         magic (0xCF4D)        |  version (4)  |   msg_type    |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |    flags      |                  sequence                     |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -116,18 +126,18 @@ A 3-message protocol establishes an encrypted session:
 ```
   Initiator (client)                         Responder (server/enclave)
        |                                            |
-       |--- Hello { pubkey_c, nonce_c } ----------->|
+       |--- Hello { pubkey_c, nonce_c, att_doc_c } ->|
        |                                            |
-       |<-- Hello { pubkey_s, nonce_s, att_doc } ---|
+       |<-- Hello { pubkey_s, nonce_s, att_doc_s } --|
        |                                            |
        |--- Hello { confirmation_hash } ----------->|
        |                                            |
      [session established, encrypted data flows]
 ```
 
-1. Client sends its ephemeral X25519 public key and nonce
-2. Server responds with its public key, nonce, and an attestation document binding its public key
-3. Client verifies the attestation, derives session keys, and sends a confirmation hash proving key agreement
+1. Client sends its ephemeral X25519 public key, nonce, and attestation document binding that key
+2. Server verifies the client attestation, then responds with its public key, nonce, and attestation document binding its key
+3. Client verifies the server attestation, both sides derive session keys, and the client sends a confirmation hash proving key agreement
 
 Session keys are derived via HKDF-SHA256 from the X25519 shared secret, salted with a transcript hash that binds both attestation hashes, both ephemeral public keys, both nonces, and the protocol version using explicit labeled framing.
 
@@ -149,9 +159,13 @@ use confidential_ml_transport::{
 // Server side
 let listener = tokio::net::TcpListener::bind("127.0.0.1:9876").await?;
 let (stream, _) = listener.accept().await?;
-let provider = MockProvider::new();
+let server_provider = MockProvider::new();
+let server_verifier = MockVerifier::new();
 let mut server = SecureChannel::accept_with_attestation(
-    stream, &provider, SessionConfig::default(),
+    stream,
+    &server_provider,
+    &server_verifier,
+    SessionConfig::development(),
 ).await?;
 
 match server.recv().await? {
@@ -161,9 +175,13 @@ match server.recv().await? {
 
 // Client side
 let stream = tokio::net::TcpStream::connect("127.0.0.1:9876").await?;
-let verifier = MockVerifier::new();
+let client_provider = MockProvider::new();
+let client_verifier = MockVerifier::new();
 let mut client = SecureChannel::connect_with_attestation(
-    stream, &verifier, SessionConfig::default(),
+    stream,
+    &client_provider,
+    &client_verifier,
+    SessionConfig::development(),
 ).await?;
 
 client.send(Bytes::from("hello")).await?;
@@ -203,15 +221,19 @@ let config = SessionConfig::builder()
 Use `connect_with_retry` to automatically retry failed connections with exponential backoff:
 
 ```rust
-use confidential_ml_transport::{SecureChannel, SessionConfig, RetryPolicy};
+use confidential_ml_transport::{MockProvider, MockVerifier, SecureChannel, SessionConfig, RetryPolicy};
 use std::time::Duration;
 
 let config = SessionConfig::builder()
     .retry_policy(RetryPolicy::default()) // 3 retries, 1s initial, 2x backoff
+    .allow_empty_measurements() // mock/dev only
     .build()?;
+let provider = MockProvider::new();
+let verifier = MockVerifier::new();
 
 let mut channel = SecureChannel::connect_with_retry(
     || async { tokio::net::TcpStream::connect("enclave:5000").await },
+    &provider,
     &verifier,
     config,
 ).await?;
@@ -223,7 +245,9 @@ Verify PCR/measurement registers against expected values during the handshake. I
 
 ```rust
 use std::collections::BTreeMap;
-use confidential_ml_transport::{SessionConfig, ExpectedMeasurements};
+use confidential_ml_transport::{
+    ExpectedMeasurements, SecureChannel, SessionConfig,
+};
 
 let mut expected = BTreeMap::new();
 expected.insert(0, pcr0_bytes.to_vec());  // PCR0: enclave image hash
@@ -235,7 +259,10 @@ let config = SessionConfig::builder()
 
 // Handshake will fail if the enclave's measurements don't match
 let mut channel = SecureChannel::connect_with_attestation(
-    stream, &verifier, config,
+    stream,
+    &provider,
+    &verifier,
+    config,
 ).await?;
 ```
 
@@ -261,22 +288,26 @@ use confidential_ml_transport::proxy::client::{run_client_proxy, ClientProxyConf
 use confidential_ml_transport::{MockProvider, MockVerifier, SessionConfig};
 
 // Inside the enclave: decrypt and forward to local inference server
+let server_provider = Arc::new(MockProvider::new());
+let server_verifier = Arc::new(MockVerifier::new());
 let server_config = ServerProxyConfig {
     listen_addr: "0.0.0.0:5000".parse()?,
     backend_addr: "127.0.0.1:8080".parse()?,  // local inference server
-    session_config: SessionConfig::default(),
+    session_config: SessionConfig::development(),
     max_connections: 256,
 };
-tokio::spawn(run_server_proxy(server_config, Arc::new(provider)));
+tokio::spawn(run_server_proxy(server_config, server_provider, server_verifier));
 
 // On the host: accept plaintext, encrypt and forward to enclave
+let client_provider = Arc::new(MockProvider::new());
+let client_verifier = Arc::new(MockVerifier::new());
 let client_config = ClientProxyConfig {
     listen_addr: "127.0.0.1:9000".parse()?,
     enclave_addr: "enclave:5000".parse()?,
-    session_config: SessionConfig::default(),
+    session_config: SessionConfig::development(),
     max_connections: 256,
 };
-tokio::spawn(run_client_proxy(client_config, Arc::new(verifier)));
+tokio::spawn(run_client_proxy(client_config, client_provider, client_verifier));
 
 // Now any TCP client connecting to localhost:9000 gets transparent encryption
 ```
@@ -304,43 +335,89 @@ channel.send_tensor(tensor).await?;
 
 > **Requires feature `tdx`:** `cargo add confidential-ml-transport --features tdx`
 >
-> `TdxProvider` uses the Linux configfs-tsm ABI (`/sys/kernel/config/tsm/report/`) available on kernel 6.7+. `TdxVerifier` parses TDX v4/v5 quotes and verifies the ECDSA-P256 attestation signature. Tested on GCP `c3-standard-4` confidential VMs with real TDX hardware.
+> `TdxProvider` uses the Linux configfs-tsm ABI (`/sys/kernel/config/tsm/report/`) available on kernel 6.7+. `TdxVerifier` parses TDX v4/v5 quotes. Production verification must use DCAP collateral (`require_collateral: true`) so the quote is anchored to Intel PCS collateral instead of only checking internal quote consistency. Tested on GCP `c3-standard-4` confidential VMs with real TDX hardware.
 
 ```rust
-use confidential_ml_transport::{TdxProvider, TdxVerifier, SecureChannel, SessionConfig};
+use std::collections::BTreeMap;
+use confidential_ml_transport::{
+    ExpectedMeasurements, SecureChannel, SessionConfig, TcbStatus, TdxCollateral,
+    TdxProvider, TdxVerifier, TdxVerifyPolicy,
+};
 
 // Server (inside TDX TD): generate real TDX attestation
-let provider = TdxProvider::new();
+let provider = TdxProvider::new()?;
+let verifier = /* verifier for the peer side, if the peer also attests */ ;
 let mut server = SecureChannel::accept_with_attestation(
-    stream, &provider, SessionConfig::default(),
+    stream,
+    &provider,
+    &verifier,
+    SessionConfig::development(), // use pinned measurements for production
 ).await?;
 
-// Client: verify TDX attestation with optional MRTD check
-let verifier = TdxVerifier::new(Some(expected_mrtd.to_vec())); // or None to accept any
+// Client: verify TDX with full DCAP collateral and measurement pinning
+let collateral = TdxCollateral {
+    root_ca_der,
+    pck_chain_der,
+    crl_der,
+    qe_identity_json: Some(qe_identity_json),
+    tcb_info_json: Some(tcb_info_json),
+    tcb_signing_chain_der: Some(tcb_signing_chain_der),
+};
+let verifier = TdxVerifier::with_policy(TdxVerifyPolicy {
+    expected_mrtd: Some(expected_mrtd.to_vec()),
+    collateral: Some(collateral),
+    require_collateral: true,
+    accepted_tcb_statuses: vec![TcbStatus::UpToDate, TcbStatus::SWHardeningNeeded],
+    ..Default::default()
+});
+let mut expected = BTreeMap::new();
+expected.insert(0, expected_mrtd.to_vec()); // measurement[0] is MRTD
+let config = SessionConfig::builder()
+    .expected_measurements(ExpectedMeasurements::new(expected))
+    .build()?;
 let mut client = SecureChannel::connect_with_attestation(
-    stream, &verifier, SessionConfig::default(),
+    stream,
+    &client_provider,
+    &verifier,
+    config,
 ).await?;
 ```
 
-`TdxVerifier` extracts measurements as: MRTD → `measurements[0]`, RTMR0-3 → `measurements[1..5]`.
+`TdxVerifier::new(...)` is retained as a backward-compatible convenience constructor. It does not require DCAP collateral by default and should not be the sole production trust decision. `TdxVerifier` extracts measurements as: MRTD → `measurements[0]`, RTMR0-3 → `measurements[1..5]`.
 
 ### SEV-SNP attestation (AMD SEV-SNP)
 
 > **Requires feature `sev-snp`:** `cargo add confidential-ml-transport --features sev-snp`
 
 ```rust
-use confidential_ml_transport::{SevSnpProvider, SevSnpVerifier, SecureChannel, SessionConfig};
+use std::collections::BTreeMap;
+use confidential_ml_transport::{
+    ExpectedMeasurements, SecureChannel, SessionConfig,
+    SevSnpProvider, SevSnpVerifier,
+};
 
 // Server (inside SEV-SNP VM)
-let provider = SevSnpProvider::new();
+let provider = SevSnpProvider::new()?;
+let verifier = /* verifier for the peer side, if the peer also attests */ ;
 let mut server = SecureChannel::accept_with_attestation(
-    stream, &provider, SessionConfig::default(),
+    stream,
+    &provider,
+    &verifier,
+    SessionConfig::development(), // use pinned measurements for production
 ).await?;
 
-// Client: verify SEV-SNP attestation
-let verifier = SevSnpVerifier::new(None);
+// Client: verify SEV-SNP attestation and pin the launch measurement
+let verifier = SevSnpVerifier::new(Some(expected_measurement.to_vec()));
+let mut expected = BTreeMap::new();
+expected.insert(0, expected_measurement.to_vec());
+let config = SessionConfig::builder()
+    .expected_measurements(ExpectedMeasurements::new(expected))
+    .build()?;
 let mut client = SecureChannel::connect_with_attestation(
-    stream, &verifier, SessionConfig::default(),
+    stream,
+    &client_provider,
+    &verifier,
+    config,
 ).await?;
 ```
 
@@ -378,6 +455,7 @@ Built-in attestation implementations:
 |---|---|---|
 | `NitroProvider` / `NitroVerifier` | `nitro` | AWS Nitro Enclaves |
 | `SevSnpProvider` / `SevSnpVerifier` | `sev-snp` | AMD SEV-SNP (Azure, GCP) |
+| `AzureSevSnpProvider` / `AzureSevSnpVerifier` | `azure-sev-snp` | Azure CVM HCL-backed SEV-SNP |
 | `TdxProvider` / `TdxVerifier` | `tdx` | Intel TDX (GCP, Azure) |
 
 ## Features
@@ -389,6 +467,7 @@ Built-in attestation implementations:
 | `vsock` | No | VSock transport via `tokio-vsock` |
 | `nitro` | No | AWS Nitro Enclave attestation (NitroProvider/NitroVerifier) |
 | `sev-snp` | No | AMD SEV-SNP attestation (SevSnpProvider/SevSnpVerifier) |
+| `azure-sev-snp` | No | Azure CVM SEV-SNP attestation through the vTPM/HCL report path |
 | `tdx` | No | Intel TDX attestation (TdxProvider/TdxVerifier) |
 
 ```bash
@@ -407,6 +486,9 @@ cargo build --features nitro
 # With SEV-SNP attestation (requires libssl-dev)
 cargo build --features sev-snp
 
+# With Azure CVM SEV-SNP attestation (requires libssl-dev and tss2 headers)
+cargo build --features azure-sev-snp
+
 # With TDX attestation (requires libssl-dev)
 cargo build --features tdx
 
@@ -420,9 +502,9 @@ Test counts depend on features and environment:
 
 | Command | Tests | Notes |
 |---------|-------|-------|
-| `cargo test --features "mock,tcp,tdx"` | ~167 | Full suite (98 lib + 68 integration + 1 doc-test). Proxy tests need socket permissions. |
+| `cargo test --features "mock,tcp,tdx"` | ~180 | Full suite without platform packages (109 lib + 70 integration + 1 doc-test). Proxy tests need socket permissions. |
 | `cargo test --features "mock,tcp"` | ~43 | Without TDX attestation tests |
-| `cargo test --all-features` | ~167 | Requires `tss2-sys` headers for `vsock` feature |
+| `cargo test --all-features` | ~180+ | Requires system TSS2 headers for `azure-sev-snp` / `tss-esapi` |
 
 Some integration tests (proxy, session) bind TCP ports and may fail in sandboxed
 environments that restrict `SO_REUSEADDR` or ephemeral port binding. CI is the
@@ -432,7 +514,7 @@ authoritative source for full-suite pass/fail.
 # Recommended: full suite without system dependencies
 cargo test --features "mock,tcp,tdx"
 
-# All tests (requires tss2-sys headers for vsock feature)
+# All tests (requires tss2-sys headers for azure-sev-snp / tss-esapi)
 cargo test --all-features
 
 # Property-based tests only
@@ -546,7 +628,7 @@ The following security measures have been applied based on a comprehensive audit
 
 ### Handshake Hardening
 - **Handshake timeout** — Configurable via `SessionConfig::handshake_timeout` (default: 30 seconds). Prevents resource exhaustion from stalled or slow handshakes.
-- **Mandatory public key binding** — The responder's attestation document must include a public key that matches the handshake key exchange. Missing public keys are rejected.
+- **Mandatory public key binding** — Each peer's attestation document must include a public key that matches its handshake key exchange. Missing public keys are rejected.
 - **Measurement verification** — Optional `ExpectedMeasurements` checked during the handshake, before any application data flows. Mismatched PCR/measurement values abort the connection.
 - **Confirmation hash binds both keys** — The confirmation message includes both the send and receive keys, ensuring both parties derived identical key pairs.
 - **Handshake sequence validation** — Frame sequence numbers are validated during the handshake (initiator hello=0, responder hello=0, confirmation=1).
@@ -566,7 +648,7 @@ The following security measures have been applied based on a comprehensive audit
 - **Flags encapsulation** — The `Flags` inner field is `pub(crate)`, with `from_raw()` / `raw()` accessors for external use.
 
 ### Known Limitations
-- **One-way attestation** — The handshake verifies the responder's (server/enclave) attestation but does not verify the initiator's identity. For mutual attestation, perform an application-level challenge-response after session establishment.
+- **Mutual attestation depends on real providers on both sides** — The protocol carries and verifies attestation documents from both peers. Demo deployments may intentionally pair a real provider on one side with `MockVerifier` on the other side; those demos authenticate only the side backed by a real verifier and must not be described as full production mutual identity.
 - **No transport binding** — The channel authenticates the data stream but does not bind to a specific transport address (IP, VSock CID). Perform a transport-level identity check separately if required.
 - **Proxy is TCP-only** — The transparent proxy currently supports TCP backends. VSock proxy support can be added by implementing the same pattern with `tokio-vsock` listeners/streams.
 

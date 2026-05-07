@@ -58,6 +58,11 @@ async fn main() -> Result<()> {
     #[cfg(feature = "vsock-nitro")]
     let verifier: Box<dyn confidential_ml_transport::AttestationVerifier> =
         Box::new(confidential_ml_transport::MockVerifier::new());
+    #[cfg(feature = "vsock-nitro")]
+    tracing::warn!(
+        "vsock-nitro example uses MockVerifier for host-side initiator attestation; \
+         this example authenticates the enclave to the host, not the host identity to the enclave"
+    );
 
     let config = SessionConfig::development();
 
