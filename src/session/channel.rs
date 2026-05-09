@@ -4,6 +4,7 @@ use tokio_util::codec::{Decoder, Encoder};
 use zeroize::Zeroize;
 
 use std::future::Future;
+use std::time::{Duration, Instant};
 
 use crate::attestation::types::VerifiedAttestation;
 use crate::attestation::{AttestationProvider, AttestationVerifier};
@@ -35,6 +36,36 @@ pub enum Message {
     Error(String),
 }
 
+/// Transport cryptographic operation measured by [`SecureChannel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelTimingOperation {
+    /// AEAD seal/encrypt operation for an outbound post-handshake frame.
+    Seal,
+    /// AEAD open/decrypt operation for an inbound post-handshake frame.
+    Open,
+}
+
+/// Development/benchmark timing for one SecureChannel cryptographic operation.
+///
+/// This intentionally measures only the local AEAD operation. It does not include
+/// network I/O, frame codec work, JSON serialization, or model inference.
+#[derive(Debug, Clone, Copy)]
+pub struct ChannelTiming {
+    pub operation: ChannelTimingOperation,
+    pub frame_type: FrameType,
+    pub sequence: u64,
+    pub input_len: usize,
+    pub output_len: usize,
+    pub elapsed: Duration,
+}
+
+impl ChannelTiming {
+    /// Elapsed time rounded down to microseconds, saturating at `u64::MAX`.
+    pub fn elapsed_us(self) -> u64 {
+        self.elapsed.as_micros().try_into().unwrap_or(u64::MAX)
+    }
+}
+
 /// Bidirectional encrypted channel over any `AsyncRead + AsyncWrite` transport.
 ///
 /// **Security notes:**
@@ -54,6 +85,8 @@ pub struct SecureChannel<T> {
     #[allow(dead_code)]
     config: SessionConfig,
     peer_attestation: Option<VerifiedAttestation>,
+    last_timing: Option<ChannelTiming>,
+    timing_observer: Option<Box<dyn FnMut(ChannelTiming) + Send + 'static>>,
 }
 
 impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
@@ -98,6 +131,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
             peer_attestation,
+            last_timing: None,
+            timing_observer: None,
         })
     }
 
@@ -170,6 +205,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
             codec: FrameCodec::with_max_payload_size(config.max_payload_size),
             config,
             peer_attestation,
+            last_timing: None,
+            timing_observer: None,
         })
     }
 
@@ -180,6 +217,39 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     /// `measurements`.
     pub fn peer_attestation(&self) -> Option<&VerifiedAttestation> {
         self.peer_attestation.as_ref()
+    }
+
+    /// Register a development/benchmark observer for local AEAD seal/open timings.
+    ///
+    /// Production code should normally leave this unset. Per-frame timings can be
+    /// a side channel if exposed to untrusted callers.
+    pub fn set_timing_observer<F>(&mut self, observer: F)
+    where
+        F: FnMut(ChannelTiming) + Send + 'static,
+    {
+        self.timing_observer = Some(Box::new(observer));
+    }
+
+    /// Remove any timing observer.
+    pub fn clear_timing_observer(&mut self) {
+        self.timing_observer = None;
+    }
+
+    /// Return the last local AEAD seal/open timing without clearing it.
+    pub fn last_timing(&self) -> Option<ChannelTiming> {
+        self.last_timing
+    }
+
+    /// Return and clear the last local AEAD seal/open timing.
+    pub fn take_last_timing(&mut self) -> Option<ChannelTiming> {
+        self.last_timing.take()
+    }
+
+    fn record_timing(&mut self, timing: ChannelTiming) {
+        self.last_timing = Some(timing);
+        if let Some(observer) = self.timing_observer.as_mut() {
+            observer(timing);
+        }
     }
 
     /// Encrypt plaintext and construct a frame. The sealer's internal sequence
@@ -201,8 +271,18 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
         }
 
         let flags_byte = Flags::ENCRYPTED | extra_flags;
+        let seal_start = Instant::now();
         let (ciphertext, seq) = self.sealer.seal(plaintext, msg_type as u8, flags_byte)?;
+        let elapsed = seal_start.elapsed();
         debug_assert!(seq <= u32::MAX as u64);
+        self.record_timing(ChannelTiming {
+            operation: ChannelTimingOperation::Seal,
+            frame_type: msg_type,
+            sequence: seq,
+            input_len: plaintext.len(),
+            output_len: ciphertext.len(),
+            elapsed,
+        });
         Ok(Frame {
             header: FrameHeader {
                 version: PROTOCOL_VERSION,
@@ -248,12 +328,21 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
                 if !frame.header.flags.is_encrypted() {
                     return Err(SessionError::UnencryptedFrame.into());
                 }
+                let open_start = Instant::now();
                 let plaintext = self.opener.open(
                     &frame.payload,
                     frame.header.sequence as u64,
                     frame.header.msg_type as u8,
                     frame.header.flags.raw(),
                 )?;
+                self.record_timing(ChannelTiming {
+                    operation: ChannelTimingOperation::Open,
+                    frame_type: frame.header.msg_type,
+                    sequence: frame.header.sequence as u64,
+                    input_len: frame.payload.len(),
+                    output_len: plaintext.len(),
+                    elapsed: open_start.elapsed(),
+                });
 
                 match frame.header.msg_type {
                     FrameType::Data => Ok(Message::Data(Bytes::from(plaintext))),
@@ -388,5 +477,59 @@ mod tests {
         // Drop — exercises the zeroization path with a non-empty read_buf history.
         drop(server);
         drop(client);
+    }
+
+    #[tokio::test]
+    async fn secure_channel_records_aead_timings() {
+        use std::sync::{Arc, Mutex};
+
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let provider = MockProvider::new();
+        let verifier = MockVerifier::new();
+        let config = SessionConfig::development();
+
+        let (mut client, mut server) = tokio::try_join!(
+            SecureChannel::connect_with_attestation(
+                client_io,
+                &provider,
+                &verifier,
+                config.clone(),
+            ),
+            SecureChannel::accept_with_attestation(server_io, &provider, &verifier, config),
+        )
+        .expect("handshake should succeed");
+
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let observed_for_callback = Arc::clone(&observed);
+        server.set_timing_observer(move |timing| {
+            observed_for_callback.lock().unwrap().push(timing);
+        });
+
+        client
+            .send(Bytes::from_static(b"timed payload"))
+            .await
+            .unwrap();
+        let msg = server.recv().await.unwrap();
+        assert!(matches!(msg, Message::Data(_)));
+
+        let timing = server
+            .last_timing()
+            .expect("recv should record an AEAD open timing");
+        assert_eq!(timing.operation, ChannelTimingOperation::Open);
+        assert_eq!(timing.frame_type, FrameType::Data);
+        assert_eq!(timing.output_len, b"timed payload".len());
+        assert!(timing.input_len >= timing.output_len);
+
+        let callback_timings = observed.lock().unwrap();
+        assert_eq!(callback_timings.len(), 1);
+        assert_eq!(callback_timings[0].operation, ChannelTimingOperation::Open);
+
+        let seal_timing = client
+            .take_last_timing()
+            .expect("send should record an AEAD seal timing");
+        assert_eq!(seal_timing.operation, ChannelTimingOperation::Seal);
+        assert_eq!(seal_timing.frame_type, FrameType::Data);
+        assert_eq!(seal_timing.input_len, b"timed payload".len());
+        assert!(client.last_timing().is_none());
     }
 }

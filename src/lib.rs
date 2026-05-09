@@ -27,7 +27,7 @@ pub mod proxy;
 pub use error::{Error, Result};
 pub use frame::tensor::{DType, OwnedTensor, TensorRef};
 pub use frame::{Flags, Frame, FrameType};
-pub use session::channel::{Message, SecureChannel};
+pub use session::channel::{ChannelTiming, ChannelTimingOperation, Message, SecureChannel};
 pub use session::retry::RetryPolicy;
 pub use session::{SecurityProfile, SessionConfig, SessionConfigBuilder};
 
