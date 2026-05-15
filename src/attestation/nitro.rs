@@ -160,6 +160,11 @@ impl AttestationVerifier for NitroVerifier {
         let cose_sign1 = CoseSign1::from_tagged_slice(&doc.raw)
             .or_else(|_| CoseSign1::from_slice(&doc.raw))
             .map_err(|e| AttestError::VerificationFailed(format!("invalid COSE_Sign1: {e}")))?;
+        if !cose_sign1.protected.header.crit.is_empty() {
+            return Err(AttestError::VerificationFailed(
+                "unsupported COSE critical header in Nitro attestation".into(),
+            ));
+        }
 
         let payload = cose_sign1
             .payload
@@ -911,6 +916,51 @@ mod tests {
         let doc = AttestationDocument::new(raw);
         let result = verifier.verify(&doc).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn reject_unsupported_critical_header() {
+        let (ca_key, ca_cert) = generate_test_ca();
+        let (leaf_key, leaf_cert) = generate_test_leaf(&ca_key, &ca_cert);
+        let pcrs = default_pcrs();
+
+        let leaf_der = leaf_cert.to_der().unwrap();
+        let ca_der = ca_cert.to_der().unwrap();
+        let payload = encode_attestation_doc(
+            "i-test-module-1234",
+            "SHA384",
+            now_ms(),
+            &pcrs,
+            &leaf_der,
+            std::slice::from_ref(&ca_der),
+            Some(&[1u8; 32]),
+            None,
+            None,
+        );
+
+        let protected = coset::HeaderBuilder::new()
+            .algorithm(coset::iana::Algorithm::ES384)
+            .add_critical_label(coset::RegisteredLabelWithPrivate::PrivateUse(-70_000))
+            .build();
+        let cose = coset::CoseSign1Builder::new()
+            .protected(protected)
+            .payload(payload)
+            .create_signature(b"", |tbs| {
+                let hash =
+                    openssl::hash::hash(MessageDigest::sha384(), tbs).expect("SHA-384 hash failed");
+                let sig = EcdsaSig::sign(&hash, &leaf_key).expect("ECDSA sign failed");
+                sig.to_der().expect("DER encoding failed")
+            })
+            .build();
+        let raw = cose.to_tagged_vec().unwrap();
+
+        let ca_pem = ca_cert.to_pem().unwrap();
+        let verifier = NitroVerifier::with_root_ca(&ca_pem, pcrs).unwrap();
+
+        let doc = AttestationDocument::new(raw);
+        let result = verifier.verify(&doc).await;
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("critical header"));
     }
 
     #[tokio::test]
