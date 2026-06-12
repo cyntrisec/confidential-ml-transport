@@ -396,7 +396,20 @@ pub fn enforce_crl_revocation(
     crl_der: &[u8],
     ark_der: &[u8],
 ) -> Result<(), SnpVerifyError> {
-    use openssl::asn1::Asn1Time;
+    let now = openssl::asn1::Asn1Time::days_from_now(0)
+        .map_err(|e| SnpVerifyError::CertParseFailed(format!("current time: {e}")))?;
+    enforce_crl_revocation_at(vcek_der, crl_der, ark_der, &now)
+}
+
+/// [`enforce_crl_revocation`] with an injectable validation time, so tests can
+/// pin `now` inside a checked-in fixture CRL's validity window instead of
+/// expiring when the fixture ages past its nextUpdate.
+fn enforce_crl_revocation_at(
+    vcek_der: &[u8],
+    crl_der: &[u8],
+    ark_der: &[u8],
+    now: &openssl::asn1::Asn1TimeRef,
+) -> Result<(), SnpVerifyError> {
     use openssl::x509::{CrlStatus, X509Crl, X509};
     use std::cmp::Ordering;
 
@@ -436,12 +449,9 @@ pub fn enforce_crl_revocation(
     // Time window: lastUpdate must not be in the future; nextUpdate (if present)
     // must not be in the past. AMD always emits nextUpdate for KDS CRLs — a
     // missing one indicates a malformed CRL we shouldn't trust.
-    let now = Asn1Time::days_from_now(0)
-        .map_err(|e| SnpVerifyError::CertParseFailed(format!("current time: {e}")))?;
-
     let last_cmp = crl
         .last_update()
-        .compare(&now)
+        .compare(now)
         .map_err(|e| SnpVerifyError::CertParseFailed(format!("compare lastUpdate: {e}")))?;
     if last_cmp == Ordering::Greater {
         return Err(SnpVerifyError::CrlSigInvalid(
@@ -453,7 +463,7 @@ pub fn enforce_crl_revocation(
         .next_update()
         .ok_or_else(|| SnpVerifyError::CrlExpired("CRL missing nextUpdate".into()))?;
     let next_cmp = next
-        .compare(&now)
+        .compare(now)
         .map_err(|e| SnpVerifyError::CertParseFailed(format!("compare nextUpdate: {e}")))?;
     if next_cmp == Ordering::Less {
         return Err(SnpVerifyError::CrlExpired(
@@ -1486,19 +1496,75 @@ mod tests {
         (ark_der, crl_der)
     }
 
+    /// Derive a deterministic "now" from the fixture CRL's own validity
+    /// window (lastUpdate or nextUpdate plus an offset), so real-fixture
+    /// tests don't start failing when the checked-in CRL ages past its
+    /// nextUpdate.
+    #[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
+    fn crl_window_time(
+        crl_der: &[u8],
+        from_next_update: bool,
+        offset_days: i64,
+    ) -> openssl::asn1::Asn1Time {
+        use openssl::asn1::Asn1Time;
+        use openssl::x509::X509Crl;
+        let crl = X509Crl::from_der(crl_der).unwrap();
+        let base = if from_next_update {
+            crl.next_update().expect("fixture CRL has nextUpdate")
+        } else {
+            crl.last_update()
+        };
+        let diff = Asn1Time::from_unix(0).unwrap().diff(base).unwrap();
+        let base_unix = i64::from(diff.days) * 86_400 + i64::from(diff.secs);
+        Asn1Time::from_unix(base_unix + offset_days * 86_400).unwrap()
+    }
+
     #[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
     #[test]
     fn crl_real_milan_accepts_random_vcek_not_in_revoked_list() {
         // Real Milan CRL from AMD KDS has no revoked certs today. Any
         // VCEK — even a synthetic one — should pass revocation check.
         // (The sig + time-window + issuer checks all work on the real CRL.)
+        // "now" is pinned one day after the CRL's lastUpdate; the wall-clock
+        // path is the thin enforce_crl_revocation wrapper.
         let (ark_der, crl_der) = load_milan_fixtures();
         let synthetic_vcek = build_test_cert("SEV-VCEK", -1, 365);
+        let now = crl_window_time(&crl_der, false, 1);
 
         assert!(
-            enforce_crl_revocation(&synthetic_vcek, &crl_der, &ark_der).is_ok(),
+            enforce_crl_revocation_at(&synthetic_vcek, &crl_der, &ark_der, &now).is_ok(),
             "real Milan CRL should accept any VCEK not in its revoked list"
         );
+    }
+
+    #[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
+    #[test]
+    fn crl_rejects_stale_next_update() {
+        // A CRL whose nextUpdate has passed must fail closed with CrlExpired,
+        // even if signature and issuer are valid.
+        let (ark_der, crl_der) = load_milan_fixtures();
+        let vcek = build_test_cert("SEV-VCEK", -1, 365);
+        let now = crl_window_time(&crl_der, true, 1);
+
+        assert!(matches!(
+            enforce_crl_revocation_at(&vcek, &crl_der, &ark_der, &now),
+            Err(SnpVerifyError::CrlExpired(_))
+        ));
+    }
+
+    #[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
+    #[test]
+    fn crl_rejects_last_update_in_future() {
+        // A CRL whose lastUpdate is ahead of the verifier's clock indicates
+        // clock skew or tampering and must be rejected.
+        let (ark_der, crl_der) = load_milan_fixtures();
+        let vcek = build_test_cert("SEV-VCEK", -1, 365);
+        let now = crl_window_time(&crl_der, false, -1);
+
+        assert!(matches!(
+            enforce_crl_revocation_at(&vcek, &crl_der, &ark_der, &now),
+            Err(SnpVerifyError::CrlSigInvalid(_))
+        ));
     }
 
     #[cfg(any(feature = "sev-snp", feature = "azure-sev-snp"))]
