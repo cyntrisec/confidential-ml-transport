@@ -3,7 +3,9 @@
 # Paced for 60-90s so viewers can read each section.
 
 set -e
-cd /home/tsyrulb/vsock/confidential-ml-transport
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+cd "${REPO_DIR}"
 
 type_cmd() {
     local cmd="$1"
