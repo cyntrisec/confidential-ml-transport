@@ -222,7 +222,10 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SecureChannel<T> {
     /// Register a development/benchmark observer for local AEAD seal/open timings.
     ///
     /// Production code should normally leave this unset. Per-frame timings can be
-    /// a side channel if exposed to untrusted callers.
+    /// a side channel if exposed to untrusted callers. The observer runs
+    /// synchronously after the cryptographic operation and must not block or
+    /// panic; a panic propagates after the channel's sequence state has advanced,
+    /// so a caught observer panic makes the channel unsuitable for reuse.
     pub fn set_timing_observer<F>(&mut self, observer: F)
     where
         F: FnMut(ChannelTiming) + Send + 'static,

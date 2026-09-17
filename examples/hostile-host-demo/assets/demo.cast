@@ -146,6 +146,6 @@
 [53.853576, "o", "/"]
 [53.895904, "o", "\r\n"]
 [54.400509, "o", "total 40K\r\n"]
-[54.400817, "o", "-rw-rw-r-- 1 tsyrulb tsyrulb  16K Feb 10 15:27 mode_a_capture.bin\r\n-rw-rw-r-- 1 tsyrulb tsyrulb  124 Feb 10 15:27 mode_b_bwd_capture.bin\r\n-rw-rw-r-- 1 tsyrulb tsyrulb  16K Feb 10 15:27 mode_b_fwd_capture.bin\r\n-rw-rw-r-- 1 tsyrulb tsyrulb 1.9K Feb 10 15:27 summary.json\r\n"]
+[54.400817, "o", "-rw-rw-r-- 1 operator operator  16K Feb 10 15:27 mode_a_capture.bin\r\n-rw-rw-r-- 1 operator operator  124 Feb 10 15:27 mode_b_bwd_capture.bin\r\n-rw-rw-r-- 1 operator operator  16K Feb 10 15:27 mode_b_fwd_capture.bin\r\n-rw-rw-r-- 1 operator operator 1.9K Feb 10 15:27 summary.json\r\n"]
 [59.403113, "o", "\r\n  Done. Mode A: full prompt + activations exposed.\r\n  Mode B: all tensors protected, entropy ~8 bits/byte.\r\n"]
 [59.403173, "o", "  AEAD overhead: 2.2% (342 bytes for 15 KB of tensor data).\r\n\r\n"]

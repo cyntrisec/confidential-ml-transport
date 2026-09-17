@@ -160,7 +160,31 @@ impl AttestationVerifier for NitroVerifier {
         let cose_sign1 = CoseSign1::from_tagged_slice(&doc.raw)
             .or_else(|_| CoseSign1::from_slice(&doc.raw))
             .map_err(|e| AttestError::VerificationFailed(format!("invalid COSE_Sign1: {e}")))?;
-        if !cose_sign1.protected.header.crit.is_empty() {
+
+        // Nitro attestation documents are signed with ES384 and carry the
+        // algorithm in the protected header. Reject algorithm metadata in the
+        // unprotected bucket so an unauthenticated header cannot influence how
+        // callers interpret an otherwise valid document.
+        if cose_sign1.unprotected.alg.is_some() {
+            return Err(AttestError::VerificationFailed(
+                "COSE algorithm must be integrity-protected in Nitro attestation".into(),
+            ));
+        }
+        if cose_sign1.protected.header.alg
+            != Some(coset::RegisteredLabelWithPrivate::Assigned(
+                coset::iana::Algorithm::ES384,
+            ))
+        {
+            return Err(AttestError::VerificationFailed(
+                "unsupported or missing COSE algorithm in Nitro attestation (expected ES384)"
+                    .into(),
+            ));
+        }
+
+        // This verifier does not implement any optional critical extensions.
+        // RFC 9052 also requires `crit` itself to be integrity protected, so a
+        // `crit` value in either bucket must fail closed.
+        if !cose_sign1.protected.header.crit.is_empty() || !cose_sign1.unprotected.crit.is_empty() {
             return Err(AttestError::VerificationFailed(
                 "unsupported COSE critical header in Nitro attestation".into(),
             ));
@@ -919,7 +943,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reject_unsupported_critical_header() {
+    async fn reject_unsupported_protected_critical_header() {
         let (ca_key, ca_cert) = generate_test_ca();
         let (leaf_key, leaf_cert) = generate_test_leaf(&ca_key, &ca_cert);
         let pcrs = default_pcrs();
@@ -961,6 +985,90 @@ mod tests {
         let result = verifier.verify(&doc).await;
         assert!(result.is_err());
         assert!(format!("{}", result.unwrap_err()).contains("critical header"));
+    }
+
+    #[tokio::test]
+    async fn reject_unprotected_critical_header() {
+        let (ca_key, ca_cert) = generate_test_ca();
+        let (leaf_key, leaf_cert) = generate_test_leaf(&ca_key, &ca_cert);
+        let pcrs = default_pcrs();
+        let raw = build_synthetic_attestation(
+            &ca_key,
+            &ca_cert,
+            &leaf_key,
+            &leaf_cert,
+            &pcrs,
+            Some(&[1u8; 32]),
+            None,
+            None,
+        );
+
+        let mut cose = CoseSign1::from_tagged_slice(&raw).unwrap();
+        cose.unprotected
+            .crit
+            .push(coset::RegisteredLabelWithPrivate::PrivateUse(-70_000));
+        let raw = cose.to_tagged_vec().unwrap();
+
+        let ca_pem = ca_cert.to_pem().unwrap();
+        let verifier = NitroVerifier::with_root_ca(&ca_pem, pcrs).unwrap();
+        let result = verifier.verify(&AttestationDocument::new(raw)).await;
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("critical header"));
+    }
+
+    #[tokio::test]
+    async fn reject_unprotected_algorithm() {
+        let (ca_key, ca_cert) = generate_test_ca();
+        let (leaf_key, leaf_cert) = generate_test_leaf(&ca_key, &ca_cert);
+        let pcrs = default_pcrs();
+        let raw = build_synthetic_attestation(
+            &ca_key,
+            &ca_cert,
+            &leaf_key,
+            &leaf_cert,
+            &pcrs,
+            Some(&[1u8; 32]),
+            None,
+            None,
+        );
+
+        let mut cose = CoseSign1::from_tagged_slice(&raw).unwrap();
+        cose.unprotected.alg = Some(coset::iana::Algorithm::ES384.into());
+        let raw = cose.to_tagged_vec().unwrap();
+
+        let ca_pem = ca_cert.to_pem().unwrap();
+        let verifier = NitroVerifier::with_root_ca(&ca_pem, pcrs).unwrap();
+        let result = verifier.verify(&AttestationDocument::new(raw)).await;
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("integrity-protected"));
+    }
+
+    #[tokio::test]
+    async fn reject_wrong_protected_algorithm() {
+        let (ca_key, ca_cert) = generate_test_ca();
+        let (leaf_key, leaf_cert) = generate_test_leaf(&ca_key, &ca_cert);
+        let pcrs = default_pcrs();
+        let raw = build_synthetic_attestation(
+            &ca_key,
+            &ca_cert,
+            &leaf_key,
+            &leaf_cert,
+            &pcrs,
+            Some(&[1u8; 32]),
+            None,
+            None,
+        );
+
+        let mut cose = CoseSign1::from_tagged_slice(&raw).unwrap();
+        cose.protected.original_data = None;
+        cose.protected.header.alg = Some(coset::iana::Algorithm::ES256.into());
+        let raw = cose.to_tagged_vec().unwrap();
+
+        let ca_pem = ca_cert.to_pem().unwrap();
+        let verifier = NitroVerifier::with_root_ca(&ca_pem, pcrs).unwrap();
+        let result = verifier.verify(&AttestationDocument::new(raw)).await;
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("expected ES384"));
     }
 
     #[tokio::test]

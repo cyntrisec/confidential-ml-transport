@@ -496,15 +496,23 @@ cargo build --features tdx
 cargo build --all-features
 ```
 
+The core/default-feature crate has an MSRV of Rust 1.75 when resolved with
+MSRV-compatible dependencies. Current optional dependencies raise the floor to
+Rust 1.81 for `nitro` and Rust 1.85 for `sev-snp` / `azure-sev-snp`; `tdx` and
+`vsock` remain compatible with Rust 1.75. This Git checkout also contains the
+Candle-based Nitro inference demo, whose shared lockfile currently requires
+Rust 1.88. Downstream library users resolve from `Cargo.toml`, not that workspace
+lockfile; users staying on an older toolchain should retain a compatible lock.
+
 ## Testing
 
 Test counts depend on features and environment:
 
 | Command | Tests | Notes |
 |---------|-------|-------|
-| `cargo test --features "mock,tcp,tdx"` | ~180 | Full suite without platform packages (109 lib + 70 integration + 1 doc-test). Proxy tests need socket permissions. |
-| `cargo test --features "mock,tcp"` | ~43 | Without TDX attestation tests |
-| `cargo test --all-features` | ~180+ | Requires system TSS2 headers for `azure-sev-snp` / `tss-esapi` |
+| `cargo test --features "mock,tcp,tdx"` | ~181 | Full suite without platform packages (110 lib + 70 integration + 1 doc-test). Proxy tests need socket permissions. |
+| `cargo test --features "mock,tcp"` | ~97 | Without TDX, Nitro, or SEV-SNP attestation tests |
+| `cargo test --all-features` | 316 passed + 6 ignored doc-tests | Requires system TSS2 headers for `azure-sev-snp` / `tss-esapi` |
 
 Some integration tests (proxy, session) bind TCP ports and may fail in sandboxed
 environments that restrict `SO_REUSEADDR` or ephemeral port binding. CI is the

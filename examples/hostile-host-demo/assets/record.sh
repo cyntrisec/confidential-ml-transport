@@ -3,7 +3,9 @@
 # Paced for 60-90s so viewers can read each section.
 
 set -e
-cd /home/tsyrulb/vsock/confidential-ml-transport
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+cd "${REPO_DIR}"
 
 type_cmd() {
     local cmd="$1"
@@ -42,8 +44,8 @@ sleep 8
 type_cmd "cat /tmp/demo-artifacts/summary.json"
 sleep 12
 
-# Show artifact files
-type_cmd "ls -lh /tmp/demo-artifacts/"
+# Show artifact files without recording local account/group names
+type_cmd "find /tmp/demo-artifacts -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort"
 sleep 5
 
 echo ""
