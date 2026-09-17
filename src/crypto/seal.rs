@@ -197,7 +197,7 @@ mod tests {
     use super::*;
 
     fn test_key() -> SymmetricKey {
-        SymmetricKey::from(rand::random())
+        SymmetricKey::from(rand::random::<[u8; 32]>())
     }
 
     fn test_session_id() -> [u8; 32] {
