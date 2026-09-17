@@ -32,9 +32,8 @@ fn build_aad(
 /// session which far exceeds practical use. The zero-padded prefix follows the
 /// standard counter-nonce construction.
 fn build_nonce(counter: u64) -> Nonce {
-    let mut nonce_bytes = [0u8; 12];
-    nonce_bytes[4..12].copy_from_slice(&counter.to_be_bytes());
-    *Nonce::from_slice(&nonce_bytes)
+    let wide_counter = u128::from(counter).to_be_bytes();
+    *Nonce::from_slice(&wide_counter[4..])
 }
 
 unsafe fn wipe_value_volatile<T>(value: &mut T) {
@@ -198,11 +197,20 @@ mod tests {
     use super::*;
 
     fn test_key() -> SymmetricKey {
-        SymmetricKey::from([0x42; 32])
+        SymmetricKey::from(rand::random())
     }
 
     fn test_session_id() -> [u8; 32] {
-        [0xAA; 32]
+        rand::random()
+    }
+
+    #[test]
+    fn nonce_uses_zero_prefix_and_big_endian_counter() {
+        let counter = u64::MAX - 1;
+        let nonce = build_nonce(counter);
+
+        assert!(nonce[..4].iter().all(|byte| *byte == 0));
+        assert_eq!(&nonce[4..], &counter.to_be_bytes());
     }
 
     #[test]

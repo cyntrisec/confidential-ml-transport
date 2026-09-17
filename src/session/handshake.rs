@@ -1,7 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use hkdf::Hkdf;
 use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -332,8 +332,7 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
     expected_measurements: Option<&ExpectedMeasurements>,
 ) -> Result<HandshakeResult, crate::error::Error> {
     let keypair = KeyPair::generate();
-    let mut nonce = [0u8; 32];
-    OsRng.fill_bytes(&mut nonce);
+    let nonce: [u8; 32] = OsRng.gen();
     let pk_bytes = keypair.public.to_bytes();
 
     // Generate our attestation binding our public key.
@@ -386,10 +385,7 @@ pub async fn initiate<T: AsyncRead + AsyncWrite + Unpin>(
     )?;
 
     // Combine nonces.
-    let mut combined_nonce = [0u8; 32];
-    for i in 0..32 {
-        combined_nonce[i] = nonce[i] ^ resp_nonce[i];
-    }
+    let combined_nonce = std::array::from_fn(|i| nonce[i] ^ resp_nonce[i]);
 
     // Compute transcript binding both attestation hashes and derive keys.
     let resp_pk = x25519_dalek::PublicKey::from(resp_pk_bytes);
@@ -467,8 +463,7 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
 
     // Generate our keypair and nonce.
     let keypair = KeyPair::generate();
-    let mut nonce = [0u8; 32];
-    OsRng.fill_bytes(&mut nonce);
+    let nonce: [u8; 32] = OsRng.gen();
     let pk_bytes = keypair.public.to_bytes();
 
     // Step 2: Generate our attestation binding our public key.
@@ -492,10 +487,7 @@ pub async fn respond<T: AsyncRead + AsyncWrite + Unpin>(
     // Derive keys.
     let resp_att_hash: [u8; 32] = Sha256::digest(&att_doc.raw).into();
 
-    let mut combined_nonce = [0u8; 32];
-    for i in 0..32 {
-        combined_nonce[i] = init_nonce[i] ^ nonce[i];
-    }
+    let combined_nonce = std::array::from_fn(|i| init_nonce[i] ^ nonce[i]);
 
     let init_pk = x25519_dalek::PublicKey::from(init_pk_bytes);
     let transcript_hash = transcript::compute_transcript(

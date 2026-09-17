@@ -51,13 +51,17 @@ pub fn compute_transcript(
 mod tests {
     use super::*;
 
+    fn random_bytes() -> [u8; 32] {
+        rand::random()
+    }
+
     #[test]
     fn transcript_deterministic() {
-        let init_hash = [0xAA; 32];
-        let resp_hash = [0xBB; 32];
-        let pk_a = [1u8; 32];
-        let pk_b = [2u8; 32];
-        let nonce = [0xCC; 32];
+        let init_hash = random_bytes();
+        let resp_hash = random_bytes();
+        let pk_a = random_bytes();
+        let pk_b = random_bytes();
+        let nonce = random_bytes();
 
         let t1 = compute_transcript(&init_hash, &resp_hash, &pk_a, &pk_b, &nonce);
         let t2 = compute_transcript(&init_hash, &resp_hash, &pk_a, &pk_b, &nonce);
@@ -66,11 +70,11 @@ mod tests {
 
     #[test]
     fn transcript_commutative_on_keys() {
-        let init_hash = [0xAA; 32];
-        let resp_hash = [0xBB; 32];
-        let pk_a = [1u8; 32];
-        let pk_b = [2u8; 32];
-        let nonce = [0xCC; 32];
+        let init_hash = random_bytes();
+        let resp_hash = random_bytes();
+        let pk_a = random_bytes();
+        let pk_b = random_bytes();
+        let nonce = random_bytes();
 
         let t1 = compute_transcript(&init_hash, &resp_hash, &pk_a, &pk_b, &nonce);
         let t2 = compute_transcript(&init_hash, &resp_hash, &pk_b, &pk_a, &nonce);
@@ -79,12 +83,13 @@ mod tests {
 
     #[test]
     fn transcript_different_inputs_differ() {
-        let init_hash = [0xAA; 32];
-        let resp_hash = [0xBB; 32];
-        let pk_a = [1u8; 32];
-        let pk_b = [2u8; 32];
-        let nonce1 = [0xCC; 32];
-        let nonce2 = [0xDD; 32];
+        let init_hash = random_bytes();
+        let resp_hash = random_bytes();
+        let pk_a = random_bytes();
+        let pk_b = random_bytes();
+        let nonce1 = random_bytes();
+        let mut nonce2 = nonce1;
+        nonce2[0] ^= 1;
 
         let t1 = compute_transcript(&init_hash, &resp_hash, &pk_a, &pk_b, &nonce1);
         let t2 = compute_transcript(&init_hash, &resp_hash, &pk_a, &pk_b, &nonce2);
@@ -93,12 +98,13 @@ mod tests {
 
     #[test]
     fn transcript_different_attestation_hashes_differ() {
-        let init_hash1 = [0xAA; 32];
-        let init_hash2 = [0xFF; 32];
-        let resp_hash = [0xBB; 32];
-        let pk_a = [1u8; 32];
-        let pk_b = [2u8; 32];
-        let nonce = [0xCC; 32];
+        let init_hash1 = random_bytes();
+        let mut init_hash2 = init_hash1;
+        init_hash2[0] ^= 1;
+        let resp_hash = random_bytes();
+        let pk_a = random_bytes();
+        let pk_b = random_bytes();
+        let nonce = random_bytes();
 
         let t1 = compute_transcript(&init_hash1, &resp_hash, &pk_a, &pk_b, &nonce);
         let t2 = compute_transcript(&init_hash2, &resp_hash, &pk_a, &pk_b, &nonce);
@@ -107,11 +113,11 @@ mod tests {
 
     #[test]
     fn transcript_binds_protocol_version() {
-        let init_hash = [0xAA; 32];
-        let resp_hash = [0xBB; 32];
-        let pk_a = [1u8; 32];
-        let pk_b = [2u8; 32];
-        let nonce = [0xCC; 32];
+        let init_hash = random_bytes();
+        let resp_hash = random_bytes();
+        let pk_a = random_bytes();
+        let pk_b = random_bytes();
+        let nonce = random_bytes();
 
         let transcript = compute_transcript(&init_hash, &resp_hash, &pk_a, &pk_b, &nonce);
 
