@@ -10,7 +10,7 @@ This document describes the security-relevant design decisions in `confidential-
 | `HEADER_SIZE` | 13 bytes | Fixed by wire format |
 | Codec `max_payload_size` | Configurable per-codec (default: `MAX_PAYLOAD_SIZE`) | `FrameCodec::with_max_payload_size()` |
 | Read buffer bound (channel) | `max_payload_size + HEADER_SIZE + 4096` | `SecureChannel::recv_frame()` |
-| Read buffer bound (handshake) | `MAX_PAYLOAD_SIZE + HEADER_SIZE + 4096` | `handshake::recv_frame()` |
+| Read buffer bound (handshake) | `MAX_ATTESTATION_DOC_SIZE + HEADER_SIZE + 1024` (~65 KiB) | `handshake::recv_frame()` |
 
 Frame payloads exceeding these limits are rejected before allocation. The codec enforces a configurable limit (which may be stricter than the wire-format maximum), and the channel enforces a read-buffer ceiling to prevent memory exhaustion from slow or malicious peers.
 
@@ -18,8 +18,8 @@ Frame payloads exceeding these limits are rejected before allocation. The codec 
 
 All handshake message parsers enforce **exact-length checks** (canonical parsing):
 
-- **Initiator hello**: Must be exactly 65 bytes (1 type + 32 pubkey + 32 nonce). Trailing bytes rejected.
-- **Responder hello**: Must be exactly `69 + doc_len` bytes (1 type + 32 pubkey + 32 nonce + 4 doc_len + doc). Trailing bytes rejected.
+- **Initiator hello**: Must be exactly `69 + doc_len` bytes (1 type + 32 pubkey + 32 nonce + 4 doc_len + attestation doc). Trailing bytes rejected.
+- **Responder hello**: Must be exactly `69 + doc_len` bytes with the same field layout. Trailing bytes rejected.
 - **Confirmation**: Must be exactly 33 bytes (1 type + 32 hash). Trailing bytes rejected.
 
 This prevents:
@@ -92,56 +92,6 @@ The transparent proxy (both client and server) limits concurrent connections via
 
 ## Reporting Vulnerabilities
 
-**Please do not open a public issue for security vulnerabilities.**
-
-### How to Report
-
-Report vulnerabilities through one of these channels:
-
-1. **GitHub Security Advisories** (preferred): [Create a new advisory](https://github.com/cyntrisec/confidential-ml-transport/security/advisories/new)
-2. **GitHub private message**: Contact [@tsyrulb](https://github.com/tsyrulb)
-
-Include as much of the following as possible:
-
-- Description of the vulnerability
-- Steps to reproduce or a proof-of-concept
-- Affected versions
-- Potential impact (confidentiality, integrity, availability)
-
-### Response Timeline
-
-| Action | Target |
-|--------|--------|
-| Acknowledge receipt | 48 hours |
-| Initial assessment | 7 days |
-| Fix or mitigation available | 30 days (best effort) |
-| Public disclosure | After fix is released, or 90 days (whichever is first) |
-
-### Supported Versions
-
-| Version | Supported |
-|---------|-----------|
-| 0.6.x (latest) | Yes |
-| < 0.6.0 | No |
-
-### Disclosure Policy
-
-We follow coordinated disclosure:
-
-1. Reporter submits vulnerability privately.
-2. We confirm the issue and assess severity.
-3. We develop and test a fix on a private branch.
-4. We release the fix and publish a security advisory.
-5. We credit the reporter (unless they prefer anonymity).
-
-### Past Security Fixes
-
-| Version | Fix | Severity |
-|---------|-----|----------|
-| 0.5.0 | SEV-SNP/Azure verifiers now reject empty certificate chains (was accepting forged attestations) | Critical |
-| 0.5.0 | SEV-SNP/Azure verifiers now pin ARK to known AMD roots (Milan/Genoa/Turin) | High |
-| 0.5.0 | TDX verifier supports DCAP trust anchoring through policy/collateral; default constructor remains compatibility mode | Medium |
-| 0.5.0 | Handshake read buffer reduced from 32 MiB to ~65 KiB to prevent memory DoS | Medium |
-| 0.5.0 | TDX provider uses RAII guard for configfs-tsm entry cleanup on error | Low |
-| 0.1.2 | Constant-time confirmation hash comparison (`subtle::ct_eq`) to prevent timing side-channel | Medium |
-| 0.1.2 | Semaphore permit panic safety to prevent connection slot exhaustion | Low |
+Reporting channels, supported versions, and response expectations are maintained
+in the repository's canonical [`SECURITY.md`](../SECURITY.md). Do not open a
+public issue for a suspected vulnerability.

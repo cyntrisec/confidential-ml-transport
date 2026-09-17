@@ -2,24 +2,26 @@
 //!
 //! Companion to `tdx-real-quote-verify.rs`. Loads a real CBOR/COSE_Sign1 Nitro
 //! attestation document (captured from inside an enclave that called the NSM
-//! API and forwarded the bytes via vsock to the host) and verifies it
-//! end-to-end against the bundled AWS Nitro root CA using `NitroVerifier`.
+//! API and forwarded the bytes via vsock to the host) and verifies its
+//! certificate chain, signature, freshness, and pinned PCR measurements against
+//! the bundled AWS Nitro root CA using `NitroVerifier`.
 //!
 //! Usage:
 //!
 //!   cargo run --release --example nitro-real-quote-verify --features nitro -- \
-//!     --quote /path/to/attestation.bin
+//!     --quote /path/to/attestation.bin \
+//!     --pcr0 <96-hex-chars> --pcr1 <96-hex-chars> --pcr2 <96-hex-chars>
 //!
 //! Optional flags:
 //!   --max-age-secs N    Override the default 5-minute freshness window.
-//!   --pcr0 <hex>        Pin PCR0 to a specific 96-hex-char value.
-//!   --pcr1 <hex>        Pin PCR1 (likewise).
-//!   --pcr2 <hex>        Pin PCR2 (likewise).
+//!   --allow-unpinned-for-dev
+//!                       Permit missing PCR pins for offline debugging only.
 //!
 //! Exits 0 on accept, non-zero on reject. Prints VERDICT + verifier details.
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::time::Duration;
 
 use confidential_ml_transport::attestation::nitro::NitroVerifier;
@@ -36,18 +38,58 @@ fn arg(name: &str) -> Option<String> {
     None
 }
 
+fn flag_present(name: &str) -> bool {
+    std::env::args().any(|value| value == name)
+}
+
+fn invalid_input(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message.into())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let quote_path = arg("--quote").expect("--quote required");
-    let max_age_secs = arg("--max-age-secs")
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(86_400); // 24h default for offline replay
+    let quote_path = arg("--quote").ok_or_else(|| invalid_input("--quote is required"))?;
+    let max_age_secs = match arg("--max-age-secs") {
+        Some(value) => value
+            .parse::<u64>()
+            .map_err(|e| invalid_input(format!("invalid --max-age-secs value: {e}")))?,
+        None => 300,
+    };
+
     let mut expected_pcrs: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+    let mut missing_pcrs = Vec::new();
     for (idx, flag) in [(0usize, "--pcr0"), (1, "--pcr1"), (2, "--pcr2")] {
-        if let Some(hex_str) = arg(flag) {
-            let bytes = hex::decode(hex_str.trim()).expect("invalid hex for PCR");
-            expected_pcrs.insert(idx, bytes);
+        match arg(flag) {
+            Some(hex_str) => {
+                let normalized = hex_str.trim().trim_start_matches("0x");
+                let bytes = hex::decode(normalized)
+                    .map_err(|e| invalid_input(format!("invalid {flag} hex: {e}")))?;
+                if bytes.len() != 48 {
+                    return Err(invalid_input(format!(
+                        "{flag} must be a 48-byte SHA-384 PCR value, got {} bytes",
+                        bytes.len()
+                    ))
+                    .into());
+                }
+                expected_pcrs.insert(idx, bytes);
+            }
+            None => missing_pcrs.push(flag),
         }
+    }
+
+    if !missing_pcrs.is_empty() {
+        if !flag_present("--allow-unpinned-for-dev") {
+            return Err(invalid_input(format!(
+                "missing required PCR pins: {}. Pass all of --pcr0/--pcr1/--pcr2, or use \
+                 --allow-unpinned-for-dev for offline debugging only",
+                missing_pcrs.join(", ")
+            ))
+            .into());
+        }
+        eprintln!(
+            "WARNING: missing PCR pins ({}); this run does not fully authenticate workload identity",
+            missing_pcrs.join(", ")
+        );
     }
 
     let raw = fs::read(&quote_path)?;

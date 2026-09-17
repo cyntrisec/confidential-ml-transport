@@ -32,6 +32,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
+  msrv:
+    name: MSRV (core/default features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --package confidential-ml-transport --locked
+
   test:
     name: Test (${{ matrix.features }})
     runs-on: ubuntu-latest

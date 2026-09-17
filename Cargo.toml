@@ -3,8 +3,10 @@ members = [".", "examples/nitro-inference", "examples/hostile-host-demo"]
 
 [package]
 name = "confidential-ml-transport"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
+# Core/default-feature MSRV. Optional backends have higher dependency floors;
+# see the README's Features section.
 rust-version = "1.75"
 description = "Attestation-bound encrypted tensor transport for confidential ML inference"
 license = "MIT OR Apache-2.0"

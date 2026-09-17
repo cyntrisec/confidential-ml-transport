@@ -44,8 +44,8 @@ sleep 8
 type_cmd "cat /tmp/demo-artifacts/summary.json"
 sleep 12
 
-# Show artifact files
-type_cmd "ls -lh /tmp/demo-artifacts/"
+# Show artifact files without recording local account/group names
+type_cmd "find /tmp/demo-artifacts -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort"
 sleep 5
 
 echo ""

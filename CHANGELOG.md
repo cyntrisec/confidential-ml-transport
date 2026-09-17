@@ -5,15 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.2] - 2026-09-17
 
 ### Security
 
-- Nitro inference example now launches production-mode enclaves by default and requires PCR0/1/2 pins unless the operator explicitly sets `ALLOW_UNPINNED_NITRO_FOR_DEV=I_UNDERSTAND`.
+- Nitro COSE verification now requires an integrity-protected ES384 algorithm header and rejects unsupported critical headers in both protected and unprotected buckets.
+- Nitro inference examples now launch production-mode enclaves by default and require PCR0/1/2 pins unless the operator explicitly selects the development-only unpinned mode.
+- The standalone Nitro verifier now defaults to a five-minute freshness window and requires PCR0/1/2 pins unless an explicit development override is supplied.
+- The standalone TDX verifier now requires an independently supplied Intel root CA, a PCK CRL, an expected MRTD, and expected REPORTDATA public-key/nonce bindings instead of deriving its trust anchor from the input PCK bundle.
+
+### Added
+
+- Real Nitro and TDX quote-verification examples for operator-supplied evidence and collateral.
+- `SecureChannel` AEAD timing observations through `ChannelTiming`, `ChannelTimingOperation`, `set_timing_observer`, `last_timing`, and `take_last_timing`. Timing data is intended for local development and benchmarks and must not be exposed to untrusted callers.
+- CI coverage for the core/default-feature Rust 1.75 MSRV.
+
+### Changed
+
+- Audited lockfile dependencies were updated to patched releases. The shared demo-workspace lockfile now requires Rust 1.88; the core/default-feature crate retains its Rust 1.75 MSRV with an MSRV-compatible resolution, with higher feature-specific floors documented in the README.
+- `SECURITY.md` is now the canonical vulnerability-reporting policy; the implementation-focused design notes live in `docs/SECURITY_DESIGN.md`.
 
 ### Fixed
 
-- README and SECURITY documentation now reflect protocol v4, mutual attestation, current AAD binding, current API signatures, current test counts, and TDX DCAP trust-anchoring requirements.
+- SEV-SNP CRL fixture tests use an injected time inside each checked-in fixture's validity window while production verification continues to use wall-clock time; explicit stale and not-yet-valid CRL regressions remain covered.
+- README and security-design documentation now reflect protocol v4, mutual-attestation hello layouts, current read-buffer bounds, AAD binding, current API signatures, current test counts, and TDX DCAP trust-anchoring requirements.
+- Demo tooling no longer embeds an operator home path or account name in the current tree.
 
 ## [0.6.1] - 2026-05-01
 
@@ -200,6 +216,7 @@ Initial release.
 - Session retry with exponential backoff.
 - Measurement/PCR verification.
 
+[0.6.2]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cyntrisec/confidential-ml-transport/compare/v0.4.0...v0.5.0
