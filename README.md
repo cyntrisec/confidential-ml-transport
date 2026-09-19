@@ -512,7 +512,7 @@ Test counts depend on features and environment:
 |---------|-------|-------|
 | `cargo test --features "mock,tcp,tdx"` | ~181 | Full suite without platform packages (110 lib + 70 integration + 1 doc-test). Proxy tests need socket permissions. |
 | `cargo test --features "mock,tcp"` | ~97 | Without TDX, Nitro, or SEV-SNP attestation tests |
-| `cargo test --all-features` | 316 passed + 6 ignored doc-tests | Requires system TSS2 headers for `azure-sev-snp` / `tss-esapi` |
+| `cargo test --all-features` | 317 passed + 6 ignored doc-tests | Requires system TSS2 headers for `azure-sev-snp` / `tss-esapi` |
 
 Some integration tests (proxy, session) bind TCP ports and may fail in sandboxed
 environments that restrict `SO_REUSEADDR` or ephemeral port binding. CI is the

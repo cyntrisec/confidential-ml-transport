@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Refreshed the fuzz-harness lockfile to patched dependency releases and added RustSec audits for both the published crate and the fuzz harness.
+- CI now enforces the checked-in dependency resolution for build, test, lint, documentation, and fuzz-lock validation jobs.
+
+### Documentation
+
+- Updated the all-features test count after the latest regression test addition.
+
 ## [0.6.2] - 2026-09-17
 
 ### Security
