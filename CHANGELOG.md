@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Updated the workspace lockfile to patched releases of `openssl`, `rustls`, `rustls-webpki`, `webpki-roots`, `webpki-root-certs` and `time`, and moved the `nitro-inference` example to Candle 0.11, which replaces `zip` 7 with `zip` 9. `cargo audit` reports no vulnerabilities for the workspace (23 before) or the fuzz harness. The published crate's own dependency requirements are unchanged, and dependencies of its default-feature build still support Rust 1.75.
 - Refreshed the fuzz-harness lockfile to patched dependency releases and added RustSec audits for both the published crate and the fuzz harness.
 - CI now enforces the checked-in dependency resolution for build, test, lint, documentation, and fuzz-lock validation jobs.
 
